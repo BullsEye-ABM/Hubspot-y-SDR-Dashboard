@@ -64,9 +64,12 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         return pd.DataFrame()
 
     # Llamada a Google Sheets API v4 con solo API Key (sin service account)
+    # Las tildes y espacios en el nombre de la pestaña requieren comillas simples
+    # y codificación correcta: 'Nombre Pestaña' → %27Nombre%20Pestaña%27
+    range_name = f"'{tab_name}'"
     url = (
         f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
-        f"/values/{requests.utils.quote(tab_name)}"
+        f"/values/{requests.utils.quote(range_name, safe='')}"
     )
     resp = requests.get(url, params={"key": api_key}, timeout=30)
 
