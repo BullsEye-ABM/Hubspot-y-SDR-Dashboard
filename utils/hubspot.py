@@ -1,13 +1,17 @@
 """
-HubSpot API Client - Multi-cuenta con filtro de fechas en la API
-Usa el endpoint de búsqueda (/search) para traer solo los registros
-del período seleccionado, en vez de bajar todo el historial.
+HubSpot API Client - Multi-cuenta optimizado
+Mejoras de performance:
+  - Carga de cuentas en paralelo (ThreadPoolExecutor)
+  - get_owners cacheado para no repetir la llamada
+  - get_activities no repite fetch de llamadas (usa solo meetings + emails)
+  - Paginación de 200 registros por página (antes era 100)
 """
 
 import requests
 import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # ─────────────────────────────────────────
@@ -22,41 +26,42 @@ def _headers(token: str) -> dict:
 
 
 def _since_ms(days: int) -> int:
-    """Retorna timestamp en milisegundos de hace N días."""
     return int((datetime.utcnow() - timedelta(days=days)).timestamp() * 1000)
 
 
 def _search(obj_type: str, token: str, properties: list,
-            filter_property: str, days: int, limit: int = 100) -> list:
+            filter_property: str, days: int, limit: int = 200) -> list:
     """
-    Usa el endpoint de búsqueda de HubSpot para traer solo registros
-    más recientes que N días. Maneja paginación automáticamente.
+    Búsqueda con filtro de fecha en la API.
+    Limit = 200 (máximo de HubSpot) → menos peticiones de paginación.
     """
-    url = f"https://api.hubapi.com/crm/v3/objects/{obj_type}/search"
+    url   = f"https://api.hubapi.com/crm/v3/objects/{obj_type}/search"
     since = _since_ms(days)
 
     body = {
         "filterGroups": [{
             "filters": [{
                 "propertyName": filter_property,
-                "operator": "GTE",
-                "value": str(since),
+                "operator":     "GTE",
+                "value":        str(since),
             }]
         }],
         "properties": properties,
-        "limit": limit,
-        "after": 0,
+        "limit":      limit,
+        "after":      0,
     }
 
     results = []
     while True:
-        resp = requests.post(url, headers=_headers(token), json=body, timeout=30)
+        try:
+            resp = requests.post(url, headers=_headers(token), json=body, timeout=30)
+        except Exception:
+            break
         if resp.status_code != 200:
             break
         data = resp.json()
         results.extend(data.get("results", []))
-        paging = data.get("paging", {}).get("next", {})
-        after = paging.get("after")
+        after = data.get("paging", {}).get("next", {}).get("after")
         if not after:
             break
         body["after"] = after
@@ -65,27 +70,34 @@ def _search(obj_type: str, token: str, properties: list,
 
 
 # ─────────────────────────────────────────
-#  Owners (SDRs)
+#  Owners (SDRs) — cacheado para no repetir
 # ─────────────────────────────────────────
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_owners(token: str) -> dict:
     """
-    Devuelve dict {owner_id: nombre_completo}.
-    Sin @st.cache_data porque se llama desde dentro de funciones ya cacheadas.
+    Devuelve dict {owner_id_str: nombre_completo}.
+    Cacheado 1 hora para no repetir la llamada desde cada función.
     """
-    resp = requests.get(
-        "https://api.hubapi.com/crm/v3/owners",
-        headers=_headers(token),
-        timeout=30,
-    )
-    owners = {}
-    if resp.status_code == 200:
-        for o in resp.json().get("results", []):
-            full_name = f"{o.get('firstName', '')} {o.get('lastName', '')}".strip()
-            name = full_name or o.get("email", "")
-            # Guardar por id numérico (como string) y como string directo
-            owners[str(o["id"])] = name
-    return owners
+    try:
+        resp = requests.get(
+            "https://api.hubapi.com/crm/v3/owners",
+            headers=_headers(token),
+            timeout=30,
+        )
+        owners = {}
+        if resp.status_code == 200:
+            for o in resp.json().get("results", []):
+                full_name = f"{o.get('firstName', '')} {o.get('lastName', '')}".strip()
+                owners[str(o["id"])] = full_name or o.get("email", str(o["id"]))
+        return owners
+    except Exception:
+        return {}
+
+
+def _owner_name(owners: dict, owner_id) -> str:
+    oid = str(owner_id) if owner_id else ""
+    return owners.get(oid, oid) if oid else ""
 
 
 # ─────────────────────────────────────────
@@ -93,36 +105,29 @@ def get_owners(token: str) -> dict:
 # ─────────────────────────────────────────
 
 CALL_PROPS = [
-    "hs_call_title",
-    "hs_call_duration",
-    "hs_call_status",
-    "hs_call_disposition",
-    "hs_call_body",
-    "hs_call_recording_url",
-    "hs_call_direction",
-    "hubspot_owner_id",
-    "hs_timestamp",
+    "hs_call_title", "hs_call_duration", "hs_call_status",
+    "hs_call_disposition", "hs_call_body", "hs_call_recording_url",
+    "hs_call_direction", "hubspot_owner_id", "hs_timestamp",
 ]
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_calls(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
-    raw = _search("calls", token, CALL_PROPS, "hs_timestamp", days)
+    raw    = _search("calls", token, CALL_PROPS, "hs_timestamp", days)
+    owners = get_owners(token)
     if not raw:
         return pd.DataFrame()
 
-    owners = get_owners(token)
     rows = []
     for r in raw:
-        p = r.get("properties", {})
-        duration_ms = p.get("hs_call_duration")
+        p            = r.get("properties", {})
+        duration_ms  = p.get("hs_call_duration")
         duration_sec = int(duration_ms) / 1000 if duration_ms else 0
-        owner_id = str(p.get("hubspot_owner_id", ""))
         rows.append({
             "id":           r["id"],
             "account":      account_name,
             "fecha":        pd.to_datetime(p.get("hs_timestamp"), utc=True, errors="coerce"),
-            "sdr":          owners.get(owner_id, owner_id),
+            "sdr":          _owner_name(owners, p.get("hubspot_owner_id")),
             "estado":       p.get("hs_call_status", ""),
             "disposicion":  p.get("hs_call_disposition", ""),
             "duracion_seg": duration_sec,
@@ -138,11 +143,11 @@ def get_calls(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
         return df
 
     df["fecha_local"] = df["fecha"].dt.tz_convert("America/Santiago")
-    df["dia"]    = df["fecha_local"].dt.date
-    df["hora"]   = df["fecha_local"].dt.hour
-    df["semana"] = df["fecha_local"].dt.isocalendar().week.astype(int)
-    df["mes"]    = df["fecha_local"].dt.to_period("M").astype(str)
-    df["conectada"] = df["estado"].str.upper() == "COMPLETED"
+    df["dia"]         = df["fecha_local"].dt.date
+    df["hora"]        = df["fecha_local"].dt.hour
+    df["semana"]      = df["fecha_local"].dt.isocalendar().week.astype(int)
+    df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
+    df["conectada"]   = df["estado"].str.upper() == "COMPLETED"
     return df
 
 
@@ -159,23 +164,22 @@ CONTACT_PROPS = [
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_contacts(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
-    raw = _search("contacts", token, CONTACT_PROPS, "createdate", days)
+    raw    = _search("contacts", token, CONTACT_PROPS, "createdate", days)
+    owners = get_owners(token)
     if not raw:
         return pd.DataFrame()
 
-    owners = get_owners(token)
     rows = []
     for r in raw:
         p = r.get("properties", {})
-        owner_id = str(p.get("hubspot_owner_id", ""))
         rows.append({
             "id":             r["id"],
             "account":        account_name,
-            "nombre":         f"{p.get('firstname', '')} {p.get('lastname', '')}".strip(),
+            "nombre":         f"{p.get('firstname',''')} {p.get('lastname','')}".strip(),
             "email":          p.get("email", ""),
             "empresa":        p.get("company", ""),
             "cargo":          p.get("jobtitle", ""),
-            "sdr":            owners.get(owner_id, owner_id),
+            "sdr":            _owner_name(owners, p.get("hubspot_owner_id")),
             "fecha_creacion": pd.to_datetime(p.get("createdate"), utc=True, errors="coerce"),
             "estado_lead":    p.get("hs_lead_status", ""),
         })
@@ -184,7 +188,7 @@ def get_contacts(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
     if df.empty:
         return df
     df["fecha_local"] = df["fecha_creacion"].dt.tz_convert("America/Santiago")
-    df["mes"] = df["fecha_local"].dt.to_period("M").astype(str)
+    df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
     return df
 
 
@@ -195,65 +199,67 @@ def get_contacts(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
 COMPANY_PROPS = [
     "name", "domain", "industry", "city", "country",
     "hubspot_owner_id", "createdate", "numberofemployees",
-    "cliente_bullseye_empresa",   # propiedad personalizada BullsEye
+    "cliente_bullseye_empresa",
 ]
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_companies(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
-    raw = _search("companies", token, COMPANY_PROPS, "createdate", days)
+    raw    = _search("companies", token, COMPANY_PROPS, "createdate", days)
+    owners = get_owners(token)
     if not raw:
         return pd.DataFrame()
 
-    owners = get_owners(token)
     rows = []
     for r in raw:
         p = r.get("properties", {})
-        owner_id = str(p.get("hubspot_owner_id", ""))
         rows.append({
-            "id":                     r["id"],
-            "account":                account_name,
-            "empresa":                p.get("name", ""),
-            "industria":              p.get("industry", ""),
-            "ciudad":                 p.get("city", ""),
-            "sdr":                    owners.get(owner_id, owner_id),
-            "cliente_bullseye":       p.get("cliente_bullseye_empresa", ""),
-            "fecha_creacion":         pd.to_datetime(p.get("createdate"), utc=True, errors="coerce"),
+            "id":               r["id"],
+            "account":          account_name,
+            "empresa":          p.get("name", ""),
+            "industria":        p.get("industry", ""),
+            "ciudad":           p.get("city", ""),
+            "sdr":              _owner_name(owners, p.get("hubspot_owner_id")),
+            "cliente_bullseye": p.get("cliente_bullseye_empresa", ""),
+            "fecha_creacion":   pd.to_datetime(p.get("createdate"), utc=True, errors="coerce"),
         })
 
     df = pd.DataFrame(rows)
     if df.empty:
         return df
     df["fecha_local"] = df["fecha_creacion"].dt.tz_convert("America/Santiago")
-    df["mes"] = df["fecha_local"].dt.to_period("M").astype(str)
+    df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
     return df
 
 
 # ─────────────────────────────────────────
-#  Actividades (Calls + Meetings + Emails)
+#  Actividades (solo Meetings + Emails, no Calls porque ya se cargan)
 # ─────────────────────────────────────────
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_activities(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
+    """
+    Carga meetings y emails de HubSpot.
+    Las llamadas NO se incluyen aquí (ya vienen de get_calls) para evitar
+    duplicar la descarga. En la página de Actividades se unen ambos.
+    """
     owners = get_owners(token)
     frames = []
 
     type_config = {
-        "calls":    ("Llamada",  "hs_timestamp",  ["hubspot_owner_id", "hs_timestamp", "hs_call_status"]),
-        "meetings": ("Reunión",  "hs_timestamp",  ["hubspot_owner_id", "hs_timestamp", "hs_meeting_title"]),
-        "emails":   ("Email",    "hs_timestamp",  ["hubspot_owner_id", "hs_timestamp"]),
+        "meetings": ("Reunión HubSpot", "hs_timestamp", ["hubspot_owner_id", "hs_timestamp", "hs_meeting_title"]),
+        "emails":   ("Email",           "hs_timestamp", ["hubspot_owner_id", "hs_timestamp"]),
     }
 
     for obj_type, (label, filter_prop, props) in type_config.items():
         raw = _search(obj_type, token, props, filter_prop, days)
         for r in raw:
             p = r.get("properties", {})
-            owner_id = str(p.get("hubspot_owner_id", ""))
             frames.append({
                 "id":      r["id"],
                 "account": account_name,
                 "tipo":    label,
-                "sdr":     owners.get(owner_id, owner_id),
+                "sdr":     _owner_name(owners, p.get("hubspot_owner_id")),
                 "fecha":   pd.to_datetime(p.get("hs_timestamp"), utc=True, errors="coerce"),
             })
 
@@ -262,36 +268,72 @@ def get_activities(token: str, account_name: str, days: int = 90) -> pd.DataFram
 
     df = pd.DataFrame(frames).dropna(subset=["fecha"])
     df["fecha_local"] = df["fecha"].dt.tz_convert("America/Santiago")
-    df["dia"]    = df["fecha_local"].dt.date
-    df["semana"] = df["fecha_local"].dt.isocalendar().week.astype(int)
-    df["mes"]    = df["fecha_local"].dt.to_period("M").astype(str)
+    df["dia"]         = df["fecha_local"].dt.date
+    df["semana"]      = df["fecha_local"].dt.isocalendar().week.astype(int)
+    df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
     return df
 
 
 # ─────────────────────────────────────────
-#  Carga multi-cuenta
+#  Carga multi-cuenta EN PARALELO
 # ─────────────────────────────────────────
 
-def load_all_accounts(secrets: dict, days: int = 90):
+def _load_single_account(acc: dict, days: int) -> dict:
+    """Carga los 4 datasets de una sola cuenta."""
+    name, token = acc["name"], acc["token"]
+    try:
+        return {
+            "name":       name,
+            "calls":      get_calls(token, name, days),
+            "contacts":   get_contacts(token, name, days),
+            "companies":  get_companies(token, name, days),
+            "activities": get_activities(token, name, days),
+        }
+    except Exception as e:
+        return {
+            "name":       name,
+            "calls":      pd.DataFrame(),
+            "contacts":   pd.DataFrame(),
+            "companies":  pd.DataFrame(),
+            "activities": pd.DataFrame(),
+            "error":      str(e),
+        }
+
+
+def load_all_accounts(secrets, days: int = 90) -> dict:
+    """
+    Carga todas las cuentas HubSpot EN PARALELO.
+    Cada cuenta se carga en su propio thread, reduciendo el tiempo total
+    de N×T a ~T (donde T es el tiempo de la cuenta más lenta).
+    """
     accounts = _parse_accounts(secrets)
 
     all_calls, all_contacts, all_companies, all_activities = [], [], [], []
 
-    for acc in accounts:
-        name, token = acc["name"], acc["token"]
-        try:
-            all_calls.append(get_calls(token, name, days))
-            all_contacts.append(get_contacts(token, name, days))
-            all_companies.append(get_companies(token, name, days))
-            all_activities.append(get_activities(token, name, days))
-        except Exception as e:
-            st.warning(f"Error cargando cuenta '{name}': {e}")
+    # Carga paralela — un thread por cuenta
+    with ThreadPoolExecutor(max_workers=min(len(accounts), 6)) as executor:
+        future_to_acc = {
+            executor.submit(_load_single_account, acc, days): acc
+            for acc in accounts
+        }
+        for future in as_completed(future_to_acc):
+            result = future.result()
+            if "error" in result:
+                st.warning(f"Error cargando cuenta '{result['name']}': {result['error']}")
+            all_calls.append(result["calls"])
+            all_contacts.append(result["contacts"])
+            all_companies.append(result["companies"])
+            all_activities.append(result["activities"])
+
+    def safe_concat(frames):
+        valid = [f for f in frames if not f.empty]
+        return pd.concat(valid, ignore_index=True) if valid else pd.DataFrame()
 
     return {
-        "calls":         pd.concat(all_calls,      ignore_index=True) if all_calls      else pd.DataFrame(),
-        "contacts":      pd.concat(all_contacts,   ignore_index=True) if all_contacts   else pd.DataFrame(),
-        "companies":     pd.concat(all_companies,  ignore_index=True) if all_companies  else pd.DataFrame(),
-        "activities":    pd.concat(all_activities, ignore_index=True) if all_activities else pd.DataFrame(),
+        "calls":         safe_concat(all_calls),
+        "contacts":      safe_concat(all_contacts),
+        "companies":     safe_concat(all_companies),
+        "activities":    safe_concat(all_activities),
         "account_names": [a["name"] for a in accounts],
     }
 
