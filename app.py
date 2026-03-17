@@ -7,9 +7,40 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import date, timedelta
+import calendar
 
 from utils.hubspot import load_all_accounts
 from utils.sheets import get_meetings_from_sheets
+
+
+# ─────────────────────────────────────────
+#  Helper: calcular rango de fechas según período
+# ─────────────────────────────────────────
+def _period_range(period_key: str):
+    """Retorna (start_date, end_date, days_for_hubspot)."""
+    today = date.today()
+    if period_key == "este_mes":
+        start = today.replace(day=1)
+        end   = today
+    elif period_key == "mes_pasado":
+        first_this = today.replace(day=1)
+        end         = first_this - timedelta(days=1)
+        start       = end.replace(day=1)
+    elif period_key == "ultimos_3m":
+        start = today - timedelta(days=90)
+        end   = today
+    elif period_key == "ultimos_6m":
+        start = today - timedelta(days=180)
+        end   = today
+    elif period_key == "este_año":
+        start = today.replace(month=1, day=1)
+        end   = today
+    else:  # todo
+        start = date(2020, 1, 1)
+        end   = today
+    days_hs = max((today - start).days + 1, 1)
+    return start, end, days_hs
 
 # ─────────────────────────────────────────
 #  Configuración de la página
@@ -36,12 +67,17 @@ with st.sidebar:
     st.markdown("## 🎯 Bullseye Dashboard")
     st.divider()
 
-    days = st.selectbox(
-        "Período",
-        options=[7, 14, 30, 60, 90, 180],
-        index=2,
-        format_func=lambda x: f"Últimos {x} días",
-    )
+    PERIOD_OPTIONS = {
+        "Este mes":        "este_mes",
+        "Mes pasado":      "mes_pasado",
+        "Últimos 3 meses": "ultimos_3m",
+        "Últimos 6 meses": "ultimos_6m",
+        "Este año":        "este_año",
+        "Todo":            "todo",
+    }
+    period_label = st.selectbox("Período", list(PERIOD_OPTIONS.keys()), index=0)
+    period_key   = PERIOD_OPTIONS[period_label]
+    start_date, end_date, days = _period_range(period_key)
 
     st.divider()
     if st.button("🔄 Actualizar datos", use_container_width=True):
@@ -133,6 +169,10 @@ def filter_hs(df, account_col="account", sdr_col="sdr"):
 def filter_sheet(df):
     if df.empty:
         return df
+    # Filtro por fecha usando "Fecha de la reunión reserva" → columna interna "fecha"
+    if "fecha" in df.columns:
+        fecha = pd.to_datetime(df["fecha"]).dt.date
+        df = df[(fecha >= start_date) & (fecha <= end_date)]
     if selected_sdr_sheet != "Todos" and "sdr" in df.columns:
         df = df[df["sdr"] == selected_sdr_sheet]
     if selected_cliente != "Todos" and "cliente" in df.columns:
@@ -151,10 +191,10 @@ meetings   = filter_sheet(meetings_df)
 # ─────────────────────────────────────────
 st.markdown('<p class="main-title">🎯 Bullseye — Panel de Control</p>', unsafe_allow_html=True)
 st.caption(
-    f"Últimos **{days} días** · {len(account_names)} cuenta(s) HubSpot · "
+    f"**{period_label}** ({start_date.strftime('%d/%m/%Y')} → {end_date.strftime('%d/%m/%Y')}) · "
+    f"{len(account_names)} cuenta(s) HubSpot · "
     f"Cuenta: **{selected_account}** · "
-    f"Cliente HubSpot: **{selected_cliente_hs}** · "
-    f"Cliente Sheet: **{selected_cliente}**"
+    f"Cliente HubSpot: **{selected_cliente_hs}**"
 )
 st.divider()
 
