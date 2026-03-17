@@ -63,21 +63,21 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         st.error(f"Falta configuración en secrets.toml: {e}")
         return pd.DataFrame()
 
-    # Llamada a Google Sheets API v4 con solo API Key (sin service account)
-    # Las tildes y espacios en el nombre de la pestaña requieren comillas simples
-    # y codificación correcta: 'Nombre Pestaña' → %27Nombre%20Pestaña%27
-    range_name = f"'{tab_name}'"
-    url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
-        f"/values/{requests.utils.quote(range_name, safe='')}"
+    # Usamos batchGet para pasar el nombre de la pestaña como parámetro query
+    # (no en la URL), así requests maneja automáticamente tildes y espacios.
+    url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values:batchGet"
+    resp = requests.get(
+        url,
+        params={"key": api_key, "ranges": tab_name},
+        timeout=30,
     )
-    resp = requests.get(url, params={"key": api_key}, timeout=30)
 
     if resp.status_code != 200:
         st.error(f"Error leyendo Google Sheet (código {resp.status_code}): {resp.text[:300]}")
         return pd.DataFrame()
 
-    values = resp.json().get("values", [])
+    value_ranges = resp.json().get("valueRanges", [])
+    values = value_ranges[0].get("values", []) if value_ranges else []
     if not values or len(values) < 2:
         st.warning("El Google Sheet está vacío o solo tiene encabezados.")
         return pd.DataFrame()
