@@ -1,0 +1,16 @@
+# ⚠️ IMPORTANTE: Estos archivos NUNCA deben subirse a GitHub
+.streamlit/secrets.toml
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+venv/
+env/
+.venv/
+
+# macOS
+.DS_Store
