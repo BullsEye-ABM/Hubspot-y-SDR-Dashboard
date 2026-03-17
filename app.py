@@ -211,21 +211,19 @@ with col_left:
 with col_right:
     st.subheader("📅 Reuniones por SDR (Google Sheets)")
     if not meetings.empty and "sdr" in meetings.columns:
-        sdr_meet = (
-            meetings.groupby("sdr")
-            .agg(
-                Agendadas  = ("sdr", "count"),
-                Realizadas = ("reunión_realizada", "sum"),
-            )
-            .reset_index()
-            .sort_values("Agendadas", ascending=False)
-        )
+        _m = meetings.copy()
+        if "reunión_realizada" not in _m.columns:
+            _m["reunión_realizada"] = False
+        sdr_meet = _m.groupby("sdr").agg(
+            Agendadas  = ("sdr", "count"),
+            Realizadas = ("reunión_realizada", "sum"),
+        ).reset_index().sort_values("Agendadas", ascending=False)
+        sdr_meet["Realizadas"]   = sdr_meet["Realizadas"].astype(int)
         sdr_meet["Pendientes"]   = sdr_meet["Agendadas"] - sdr_meet["Realizadas"]
         sdr_meet["% Realizadas"] = (
             sdr_meet["Realizadas"] / sdr_meet["Agendadas"] * 100
         ).round(1).astype(str) + "%"
         sdr_meet = sdr_meet.rename(columns={"sdr": "SDR"})
-        sdr_meet["Realizadas"] = sdr_meet["Realizadas"].astype(int)
         st.dataframe(
             sdr_meet[["SDR", "Agendadas", "Realizadas", "Pendientes", "% Realizadas"]],
             use_container_width=True,
