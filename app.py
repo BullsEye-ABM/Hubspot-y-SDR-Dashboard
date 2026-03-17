@@ -214,17 +214,23 @@ with col_right:
         sdr_meet = (
             meetings.groupby("sdr")
             .agg(
-                Agendadas=("sdr", "count"),
-                Realizadas=("reunión_realizada", "sum") if "reunión_realizada" in meetings.columns else ("sdr", "count"),
+                Agendadas  = ("sdr", "count"),
+                Realizadas = ("reunión_realizada", "sum"),
             )
             .reset_index()
             .sort_values("Agendadas", ascending=False)
         )
-        fig2 = go.Figure()
-        fig2.add_bar(x=sdr_meet["sdr"], y=sdr_meet["Agendadas"],  name="Agendadas",  marker_color="#2a9d8f")
-        fig2.add_bar(x=sdr_meet["sdr"], y=sdr_meet["Realizadas"], name="Realizadas", marker_color="#e9c46a")
-        fig2.update_layout(barmode="group", height=320, margin=dict(t=10, b=40))
-        st.plotly_chart(fig2, use_container_width=True)
+        sdr_meet["Pendientes"]   = sdr_meet["Agendadas"] - sdr_meet["Realizadas"]
+        sdr_meet["% Realizadas"] = (
+            sdr_meet["Realizadas"] / sdr_meet["Agendadas"] * 100
+        ).round(1).astype(str) + "%"
+        sdr_meet = sdr_meet.rename(columns={"sdr": "SDR"})
+        sdr_meet["Realizadas"] = sdr_meet["Realizadas"].astype(int)
+        st.dataframe(
+            sdr_meet[["SDR", "Agendadas", "Realizadas", "Pendientes", "% Realizadas"]],
+            use_container_width=True,
+            hide_index=True,
+        )
     else:
         st.info("Sin datos de reuniones. Verifica que el Google Sheet esté compartido como 'Cualquiera con el link puede ver'.")
 

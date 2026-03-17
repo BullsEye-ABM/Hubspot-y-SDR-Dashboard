@@ -153,8 +153,8 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
     else:
         df["asiste_bool"] = False
 
-    # Filtrar filas sin SDR válido
+    # Filas sin SDR → etiquetar como "Sin asignar" en vez de descartar
     if "sdr" in df.columns:
-        df = df[df["sdr"].ne("") & df["sdr"].ne("nan")].copy()
+        df["sdr"] = df["sdr"].replace({"": "Sin asignar", "nan": "Sin asignar"})
 
     return df
