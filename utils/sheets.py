@@ -63,14 +63,14 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         st.error(f"Falta configuración en secrets.toml: {e}")
         return pd.DataFrame()
 
-    # Google Sheets API requiere el rango en formato 'NombreHoja'!A:ZZ
-    # Las comillas simples son obligatorias cuando el nombre tiene tildes o espacios.
-    # Usamos batchGet con el rango como query param para que requests maneje el encoding.
-    range_param = f"'{tab_name}'!A:ZZ"
-    url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values:batchGet"
+    # Usamos Google Visualization API (gviz) en vez de Sheets API v4.
+    # Ventajas: maneja tildes/espacios automáticamente, no necesita API key,
+    # funciona con cualquier sheet público ("Cualquiera con el link puede ver").
+    import io
+    gviz_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq"
     resp = requests.get(
-        url,
-        params={"key": api_key, "ranges": range_param},
+        gviz_url,
+        params={"tqx": "out:csv", "sheet": tab_name},
         timeout=30,
     )
 
@@ -78,19 +78,16 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         st.error(f"Error leyendo Google Sheet (código {resp.status_code}): {resp.text[:300]}")
         return pd.DataFrame()
 
-    value_ranges = resp.json().get("valueRanges", [])
-    values = value_ranges[0].get("values", []) if value_ranges else []
-    if not values or len(values) < 2:
-        st.warning("El Google Sheet está vacío o solo tiene encabezados.")
+    if not resp.text.strip():
+        st.warning("El Google Sheet está vacío.")
         return pd.DataFrame()
 
-    # Construir DataFrame con encabezados de la primera fila
-    headers = values[0]
-    rows    = values[1:]
-    # Rellenar filas más cortas que el encabezado
-    rows = [r + [""] * (len(headers) - len(r)) for r in rows]
+    # Leer CSV directamente con pandas
+    df = pd.read_csv(io.StringIO(resp.text), dtype=str).fillna("")
 
-    df = pd.DataFrame(rows, columns=headers)
+    if df.empty:
+        st.warning("El Google Sheet no tiene datos.")
+        return pd.DataFrame()
 
     # Renombrar columnas al nombre interno
     df = df.rename(columns=_REVERSE_MAP)
