@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 
 
 # ─────────────────────────────────────────
@@ -73,11 +74,12 @@ def _search(obj_type: str, token: str, properties: list,
 #  Owners (SDRs) — cacheado para no repetir
 # ─────────────────────────────────────────
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@lru_cache(maxsize=32)
 def get_owners(token: str) -> dict:
     """
     Devuelve dict {owner_id_str: nombre_completo}.
-    Cacheado 1 hora para no repetir la llamada desde cada función.
+    Usa lru_cache (Python puro) en vez de @st.cache_data para que funcione
+    correctamente cuando se llama desde dentro de otras funciones cacheadas.
     """
     try:
         resp = requests.get(
@@ -175,7 +177,7 @@ def get_contacts(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
         rows.append({
             "id":             r["id"],
             "account":        account_name,
-            "nombre":         f"{p.get('firstname',''')} {p.get('lastname','')}".strip(),
+            "nombre":         f"{p.get('firstname', '')} {p.get('lastname', '')}".strip(),
             "email":          p.get("email", ""),
             "empresa":        p.get("company", ""),
             "cargo":          p.get("jobtitle", ""),
