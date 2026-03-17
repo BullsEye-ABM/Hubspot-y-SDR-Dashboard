@@ -63,12 +63,14 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         st.error(f"Falta configuración en secrets.toml: {e}")
         return pd.DataFrame()
 
-    # Usamos batchGet para pasar el nombre de la pestaña como parámetro query
-    # (no en la URL), así requests maneja automáticamente tildes y espacios.
+    # Google Sheets API requiere el rango en formato 'NombreHoja'!A:ZZ
+    # Las comillas simples son obligatorias cuando el nombre tiene tildes o espacios.
+    # Usamos batchGet con el rango como query param para que requests maneje el encoding.
+    range_param = f"'{tab_name}'!A:ZZ"
     url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values:batchGet"
     resp = requests.get(
         url,
-        params={"key": api_key, "ranges": tab_name},
+        params={"key": api_key, "ranges": range_param},
         timeout=30,
     )
 
