@@ -7,7 +7,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
 
 from utils.hubspot import load_all_accounts
 from utils.sheets import get_meetings_from_sheets
@@ -22,15 +21,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# CSS personalizado
 st.markdown("""
 <style>
-    .metric-card {
-        background: #f8f9fa;
-        border-radius: 10px;
-        padding: 16px;
-        border-left: 4px solid #e63946;
-    }
     .stMetric label { font-size: 13px !important; }
     div[data-testid="stMetricValue"] { font-size: 2rem !important; font-weight: 700; }
     .main-title { color: #1d3557; font-size: 2rem; font-weight: 800; }
@@ -38,10 +30,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────
-#  Sidebar - Filtros globales
+#  Sidebar - Período y botón actualizar
 # ─────────────────────────────────────────
 with st.sidebar:
-    st.image("https://i.imgur.com/nXXPY3L.png", width=140) if False else None
     st.markdown("## 🎯 Bullseye Dashboard")
     st.divider()
 
@@ -56,23 +47,21 @@ with st.sidebar:
     if st.button("🔄 Actualizar datos", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-
-    st.caption(f"Datos actualizados cada 30 min")
+    st.caption("Datos actualizados cada 30 min")
 
 # ─────────────────────────────────────────
 #  Carga de datos
 # ─────────────────────────────────────────
 with st.spinner("Cargando datos de HubSpot..."):
     try:
-        data = load_all_accounts(st.secrets, days=days)
-        calls_df = data["calls"]
-        contacts_df = data["contacts"]
+        data         = load_all_accounts(st.secrets, days=days)
+        calls_df     = data["calls"]
+        contacts_df  = data["contacts"]
         companies_df = data["companies"]
-        activities_df = data["activities"]
-        account_names = data["account_names"]
+        activities_df= data["activities"]
+        account_names= data["account_names"]
     except Exception as e:
         st.error(f"Error conectando a HubSpot: {e}")
-        st.info("Verifica que los tokens estén bien configurados en los secrets.")
         st.stop()
 
 with st.spinner("Cargando reuniones desde Google Sheets..."):
@@ -83,160 +72,248 @@ with st.spinner("Cargando reuniones desde Google Sheets..."):
         meetings_df = pd.DataFrame()
 
 # ─────────────────────────────────────────
-#  Filtro de cuenta
+#  Sidebar - Filtros (se llenan con los datos ya cargados)
 # ─────────────────────────────────────────
 with st.sidebar:
-    all_accounts = ["Todas"] + account_names
-    selected_account = st.selectbox("Cuenta HubSpot", all_accounts)
+    st.divider()
+    st.markdown("### 🔎 Filtros")
 
-    # Filtrar SDRs disponibles
-    if not calls_df.empty and "sdr" in calls_df.columns:
-        sdrs = ["Todos"] + sorted(calls_df["sdr"].dropna().unique().tolist())
+    # Filtro por cuenta HubSpot
+    all_accounts_opts = ["Todas"] + account_names
+    selected_account = st.selectbox("Cuenta HubSpot", all_accounts_opts)
+
+    # Filtro por Cliente BullsEye (propiedad de empresa en HubSpot)
+    if not companies_df.empty and "cliente_bullseye" in companies_df.columns:
+        clientes_hs = sorted([
+            c for c in companies_df["cliente_bullseye"].dropna().unique()
+            if c and c not in ("", "nan", "None")
+        ])
     else:
-        sdrs = ["Todos"]
-    selected_sdr = st.selectbox("SDR", sdrs)
+        clientes_hs = []
+    selected_cliente_hs = st.selectbox("🏢 Cliente BullsEye (HubSpot)", ["Todos"] + clientes_hs)
+
+    # Filtro por SDR (de HubSpot)
+    if not calls_df.empty and "sdr" in calls_df.columns:
+        sdrs_hs = sorted([s for s in calls_df["sdr"].dropna().unique() if s and s != ""])
+    else:
+        sdrs_hs = []
+    selected_sdr = st.selectbox("SDR (HubSpot)", ["Todos"] + sdrs_hs)
+
+    # Filtro por SDR (de Reuniones / Sheets)
+    if not meetings_df.empty and "sdr" in meetings_df.columns:
+        sdrs_sh = sorted([s for s in meetings_df["sdr"].dropna().unique() if s and s not in ("", "nan")])
+    else:
+        sdrs_sh = []
+    selected_sdr_sheet = st.selectbox("SDR (Reuniones)", ["Todos"] + sdrs_sh)
+
+    # Filtro por Cliente (columna "cliente" del sheet)
+    if not meetings_df.empty and "cliente" in meetings_df.columns:
+        clientes = sorted([c for c in meetings_df["cliente"].dropna().unique() if c and c not in ("", "nan")])
+        selected_cliente = st.selectbox("Cliente", ["Todos"] + clientes)
+    else:
+        selected_cliente = "Todos"
 
 
-def apply_filters(df, account_col="account", sdr_col="sdr"):
+# ─────────────────────────────────────────
+#  Aplicar filtros
+# ─────────────────────────────────────────
+def filter_hs(df, account_col="account", sdr_col="sdr"):
     if df.empty:
         return df
     if selected_account != "Todas" and account_col in df.columns:
         df = df[df[account_col] == selected_account]
     if selected_sdr != "Todos" and sdr_col in df.columns:
         df = df[df[sdr_col] == selected_sdr]
-    return df
+    # Filtro por Cliente BullsEye: aplica sobre companies y se propaga vía join si aplica
+    if selected_cliente_hs != "Todos" and "cliente_bullseye" in df.columns:
+        df = df[df["cliente_bullseye"] == selected_cliente_hs]
+    return df.copy()
 
 
-calls = apply_filters(calls_df)
-contacts = apply_filters(contacts_df)
-companies = apply_filters(companies_df)
-activities = apply_filters(activities_df)
-meetings = meetings_df.copy()
-if not meetings.empty and selected_sdr != "Todos" and "sdr" in meetings.columns:
-    meetings = meetings[meetings["sdr"] == selected_sdr]
+def filter_sheet(df):
+    if df.empty:
+        return df
+    if selected_sdr_sheet != "Todos" and "sdr" in df.columns:
+        df = df[df["sdr"] == selected_sdr_sheet]
+    if selected_cliente != "Todos" and "cliente" in df.columns:
+        df = df[df["cliente"] == selected_cliente]
+    return df.copy()
+
+
+calls      = filter_hs(calls_df)
+contacts   = filter_hs(contacts_df)
+companies  = filter_hs(companies_df)
+activities = filter_hs(activities_df)
+meetings   = filter_sheet(meetings_df)
 
 # ─────────────────────────────────────────
 #  Header
 # ─────────────────────────────────────────
 st.markdown('<p class="main-title">🎯 Bullseye — Panel de Control</p>', unsafe_allow_html=True)
-st.caption(f"Mostrando datos de los últimos **{days} días** · {len(account_names)} cuenta(s) HubSpot conectada(s)")
+st.caption(
+    f"Últimos **{days} días** · {len(account_names)} cuenta(s) HubSpot · "
+    f"Cuenta: **{selected_account}** · "
+    f"Cliente HubSpot: **{selected_cliente_hs}** · "
+    f"Cliente Sheet: **{selected_cliente}**"
+)
 st.divider()
 
 # ─────────────────────────────────────────
-#  KPIs principales
+#  KPIs
 # ─────────────────────────────────────────
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 
-total_calls = len(calls) if not calls.empty else 0
+total_calls     = len(calls) if not calls.empty else 0
 connected_calls = int(calls["conectada"].sum()) if not calls.empty and "conectada" in calls.columns else 0
-connection_rate = round(connected_calls / total_calls * 100, 1) if total_calls > 0 else 0
-total_meetings = len(meetings) if not meetings.empty else 0
-total_contacts = len(contacts) if not contacts.empty else 0
+conn_rate       = round(connected_calls / total_calls * 100, 1) if total_calls > 0 else 0
+total_contacts  = len(contacts) if not contacts.empty else 0
 total_companies = len(companies) if not companies.empty else 0
-avg_duration = round(calls[calls["conectada"] == True]["duracion_min"].mean(), 1) if not calls.empty and connected_calls > 0 else 0
+avg_dur         = round(
+    calls[calls["conectada"] == True]["duracion_min"].mean(), 1
+) if not calls.empty and connected_calls > 0 else 0
 
-col1.metric("📞 Llamadas totales", f"{total_calls:,}")
-col2.metric("✅ Llamadas conectadas", f"{connected_calls:,}", f"{connection_rate}% tasa")
-col3.metric("📅 Reuniones agendadas", f"{total_meetings:,}")
-col4.metric("👤 Contactos nuevos", f"{total_contacts:,}")
-col5.metric("🏢 Empresas prospectadas", f"{total_companies:,}")
-col6.metric("⏱️ Duración prom. llamada", f"{avg_duration} min")
+# Reuniones: total y realizadas
+total_meetings    = len(meetings) if not meetings.empty else 0
+realized_meetings = int(meetings["reunión_realizada"].sum()) if not meetings.empty and "reunión_realizada" in meetings.columns else 0
+
+c1.metric("📞 Llamadas totales",    f"{total_calls:,}")
+c2.metric("✅ Conectadas",          f"{connected_calls:,}", f"{conn_rate}% tasa")
+c3.metric("📅 Reuniones agendadas", f"{total_meetings:,}")
+c4.metric("✔️ Reuniones realizadas", f"{realized_meetings:,}")
+c5.metric("👤 Contactos nuevos",    f"{total_contacts:,}")
+c6.metric("⏱️ Duración prom.",      f"{avg_dur} min")
 
 st.divider()
 
 # ─────────────────────────────────────────
-#  Gráficos principales
+#  Gráficos fila 1: Llamadas por SDR | Reuniones por SDR
 # ─────────────────────────────────────────
 col_left, col_right = st.columns(2)
 
-# Llamadas por SDR
 with col_left:
     st.subheader("📞 Llamadas por SDR")
     if not calls.empty and "sdr" in calls.columns:
-        sdr_calls = calls.groupby("sdr").agg(
-            Total=("id", "count"),
-            Conectadas=("conectada", "sum"),
-        ).reset_index().sort_values("Total", ascending=False)
+        sdr_calls = (
+            calls.groupby("sdr")
+            .agg(Total=("id", "count"), Conectadas=("conectada", "sum"))
+            .reset_index()
+            .sort_values("Total", ascending=False)
+        )
         sdr_calls["Tasa %"] = (sdr_calls["Conectadas"] / sdr_calls["Total"] * 100).round(1)
-
         fig = go.Figure()
-        fig.add_bar(x=sdr_calls["sdr"], y=sdr_calls["Total"], name="Total", marker_color="#457b9d")
+        fig.add_bar(x=sdr_calls["sdr"], y=sdr_calls["Total"],     name="Total",      marker_color="#457b9d")
         fig.add_bar(x=sdr_calls["sdr"], y=sdr_calls["Conectadas"], name="Conectadas", marker_color="#e63946")
         fig.update_layout(barmode="group", height=320, margin=dict(t=10, b=40))
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Sin datos de llamadas para este período.")
 
-# Reuniones agendadas por SDR
 with col_right:
-    st.subheader("📅 Reuniones por SDR")
+    st.subheader("📅 Reuniones por SDR (Google Sheets)")
     if not meetings.empty and "sdr" in meetings.columns:
-        sdr_meet = meetings.groupby("sdr").size().reset_index(name="Reuniones").sort_values("Reuniones", ascending=False)
-        fig2 = px.bar(sdr_meet, x="sdr", y="Reuniones", color_discrete_sequence=["#2a9d8f"], height=320)
-        fig2.update_layout(margin=dict(t=10, b=40))
+        sdr_meet = (
+            meetings.groupby("sdr")
+            .agg(
+                Agendadas=("sdr", "count"),
+                Realizadas=("reunión_realizada", "sum") if "reunión_realizada" in meetings.columns else ("sdr", "count"),
+            )
+            .reset_index()
+            .sort_values("Agendadas", ascending=False)
+        )
+        fig2 = go.Figure()
+        fig2.add_bar(x=sdr_meet["sdr"], y=sdr_meet["Agendadas"],  name="Agendadas",  marker_color="#2a9d8f")
+        fig2.add_bar(x=sdr_meet["sdr"], y=sdr_meet["Realizadas"], name="Realizadas", marker_color="#e9c46a")
+        fig2.update_layout(barmode="group", height=320, margin=dict(t=10, b=40))
         st.plotly_chart(fig2, use_container_width=True)
     else:
-        st.info("Sin datos de reuniones para este período.")
+        st.info("Sin datos de reuniones. Verifica que el Google Sheet esté compartido como 'Cualquiera con el link puede ver'.")
 
-# Tendencia de actividades en el tiempo
+# ─────────────────────────────────────────
+#  Gráficos fila 2: Tendencia diaria
+# ─────────────────────────────────────────
 st.subheader("📈 Tendencia de actividades diarias")
 if not calls.empty and "dia" in calls.columns:
-    daily = calls.groupby("dia").agg(
-        Llamadas=("id", "count"),
-        Conectadas=("conectada", "sum"),
-    ).reset_index()
+    daily = calls.groupby("dia").agg(Llamadas=("id","count"), Conectadas=("conectada","sum")).reset_index()
     daily["dia"] = pd.to_datetime(daily["dia"])
-
     fig3 = go.Figure()
-    fig3.add_scatter(x=daily["dia"], y=daily["Llamadas"], mode="lines+markers", name="Llamadas totales", line=dict(color="#457b9d", width=2))
+    fig3.add_scatter(x=daily["dia"], y=daily["Llamadas"],   mode="lines+markers", name="Llamadas",   line=dict(color="#457b9d", width=2))
     fig3.add_scatter(x=daily["dia"], y=daily["Conectadas"], mode="lines+markers", name="Conectadas", line=dict(color="#e63946", width=2))
-
     if not meetings.empty and "dia" in meetings.columns:
         m_daily = meetings.groupby("dia").size().reset_index(name="Reuniones")
         m_daily["dia"] = pd.to_datetime(m_daily["dia"])
         fig3.add_scatter(x=m_daily["dia"], y=m_daily["Reuniones"], mode="lines+markers", name="Reuniones", line=dict(color="#2a9d8f", width=2, dash="dash"))
-
     fig3.update_layout(height=300, margin=dict(t=10, b=40), hovermode="x unified")
     st.plotly_chart(fig3, use_container_width=True)
 else:
     st.info("Sin datos de actividad para mostrar tendencia.")
 
+st.divider()
+
 # ─────────────────────────────────────────
-#  Tabla resumen por SDR
+#  Tabla resumen por SDR — HubSpot
 # ─────────────────────────────────────────
-st.subheader("📊 Resumen por SDR")
+st.subheader("📊 Resumen por SDR — HubSpot")
 
-rows_summary = []
-sdrs_list = sorted(calls["sdr"].dropna().unique().tolist()) if not calls.empty and "sdr" in calls.columns else []
-sheets_sdrs = sorted(meetings["sdr"].dropna().unique().tolist()) if not meetings.empty and "sdr" in meetings.columns else []
-all_sdrs = sorted(set(sdrs_list + sheets_sdrs))
-
-for sdr in all_sdrs:
-    sdr_c = calls[calls["sdr"] == sdr] if not calls.empty else pd.DataFrame()
-    sdr_m = meetings[meetings["sdr"] == sdr] if not meetings.empty else pd.DataFrame()
-
-    t_calls = len(sdr_c)
-    t_connected = int(sdr_c["conectada"].sum()) if not sdr_c.empty and "conectada" in sdr_c.columns else 0
-    t_rate = round(t_connected / t_calls * 100, 1) if t_calls > 0 else 0
-    t_meetings = len(sdr_m)
-    avg_dur = round(sdr_c[sdr_c["conectada"] == True]["duracion_min"].mean(), 1) if not sdr_c.empty and t_connected > 0 else 0
-    t_contacts = len(contacts[contacts["sdr"] == sdr]) if not contacts.empty else 0
-
-    rows_summary.append({
-        "SDR": sdr,
-        "Llamadas": t_calls,
-        "Conectadas": t_connected,
-        "Tasa conexión": f"{t_rate}%",
-        "Reuniones": t_meetings,
-        "Duración prom.": f"{avg_dur} min",
-        "Contactos nuevos": t_contacts,
+sdrs_hs_list = sorted(calls["sdr"].dropna().unique().tolist()) if not calls.empty and "sdr" in calls.columns else []
+rows_hs = []
+for sdr in sdrs_hs_list:
+    if not sdr or sdr in ("", "nan"):
+        continue
+    sc = calls[calls["sdr"] == sdr]     if not calls.empty     else pd.DataFrame()
+    sco= contacts[contacts["sdr"] == sdr] if not contacts.empty else pd.DataFrame()
+    t  = len(sc)
+    cn = int(sc["conectada"].sum()) if not sc.empty and "conectada" in sc.columns else 0
+    rows_hs.append({
+        "SDR":             sdr,
+        "Cuenta":          sc["account"].iloc[0] if not sc.empty and "account" in sc.columns else "",
+        "Llamadas":        t,
+        "Conectadas":      cn,
+        "Tasa conexión":   f"{round(cn/t*100,1)}%" if t > 0 else "0%",
+        "Dur. prom. (min)":round(sc[sc["conectada"]==True]["duracion_min"].mean(),1) if not sc.empty and cn > 0 else 0,
+        "Contactos nuevos":len(sco),
     })
 
-if rows_summary:
-    summary_df = pd.DataFrame(rows_summary)
-    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+if rows_hs:
+    st.dataframe(pd.DataFrame(rows_hs), use_container_width=True, hide_index=True)
 else:
-    st.info("Configura tus cuentas HubSpot para ver el resumen.")
+    st.info("Sin datos de HubSpot para este período y filtros.")
 
 st.divider()
-st.caption("🎯 Bullseye Dashboard · Datos en tiempo real desde HubSpot y Google Sheets")
+
+# ─────────────────────────────────────────
+#  Tabla resumen por SDR — Google Sheets (Reuniones)
+# ─────────────────────────────────────────
+st.subheader("📊 Resumen por SDR — Reuniones (Google Sheets)")
+
+if not meetings.empty and "sdr" in meetings.columns:
+    sdrs_sh_list = sorted([s for s in meetings["sdr"].dropna().unique() if s and s not in ("", "nan")])
+    rows_sh = []
+    for sdr in sdrs_sh_list:
+        sm = meetings[meetings["sdr"] == sdr]
+        agendadas  = len(sm)
+        realizadas = int(sm["reunión_realizada"].sum()) if "reunión_realizada" in sm.columns else 0
+        pendientes = agendadas - realizadas
+        clientes_u = sm["cliente"].dropna().nunique() if "cliente" in sm.columns else 0
+        rows_sh.append({
+            "SDR":         sdr,
+            "Agendadas":   agendadas,
+            "Realizadas":  realizadas,
+            "Pendientes":  pendientes,
+            "Tasa realiz.":f"{round(realizadas/agendadas*100,1)}%" if agendadas > 0 else "0%",
+            "Clientes":    clientes_u,
+        })
+    st.dataframe(pd.DataFrame(rows_sh), use_container_width=True, hide_index=True)
+
+    # Detalle de reuniones
+    with st.expander("📋 Ver detalle de reuniones"):
+        cols_show = [c for c in ["fecha", "sdr", "cliente", "empresa", "contacto", "cargo", "realizado", "ejecutivo", "kam", "comentarios"] if c in meetings.columns]
+        st.dataframe(
+            meetings[cols_show].sort_values("fecha", ascending=False) if "fecha" in meetings.columns else meetings[cols_show],
+            use_container_width=True,
+            hide_index=True,
+        )
+else:
+    st.info("Sin datos de reuniones disponibles.")
+
+st.divider()
+st.caption("🎯 Bullseye Dashboard · HubSpot + Google Sheets")

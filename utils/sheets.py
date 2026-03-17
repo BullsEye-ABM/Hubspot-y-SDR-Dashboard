@@ -49,15 +49,16 @@ _REVERSE_MAP = {v: k for k, v in COLUMN_MAP.items()}
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def get_meetings_from_sheets(secrets) -> pd.DataFrame:
+def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
     """
     Lee el Google Sheet de reuniones usando solo una API Key de Google.
     El sheet debe estar compartido como 'Cualquiera con el link puede ver'.
+    El parámetro empieza con _ para que Streamlit no intente hashearlo.
     """
     try:
-        sheet_id  = secrets["google_sheets"]["sheet_id"]
-        tab_name  = secrets["google_sheets"].get("worksheet_name", "Gestión de reuniones")
-        api_key   = secrets["google_sheets"]["api_key"]
+        sheet_id  = _secrets["google_sheets"]["sheet_id"]
+        tab_name  = _secrets["google_sheets"].get("worksheet_name", "Gestión de reuniones")
+        api_key   = _secrets["google_sheets"]["api_key"]
     except KeyError as e:
         st.error(f"Falta configuración en secrets.toml: {e}")
         return pd.DataFrame()

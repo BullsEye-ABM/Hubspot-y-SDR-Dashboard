@@ -68,9 +68,11 @@ def _search(obj_type: str, token: str, properties: list,
 #  Owners (SDRs)
 # ─────────────────────────────────────────
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def get_owners(token: str) -> dict:
-    """Devuelve dict {owner_id: nombre_completo}"""
+    """
+    Devuelve dict {owner_id: nombre_completo}.
+    Sin @st.cache_data porque se llama desde dentro de funciones ya cacheadas.
+    """
     resp = requests.get(
         "https://api.hubapi.com/crm/v3/owners",
         headers=_headers(token),
@@ -80,7 +82,9 @@ def get_owners(token: str) -> dict:
     if resp.status_code == 200:
         for o in resp.json().get("results", []):
             full_name = f"{o.get('firstName', '')} {o.get('lastName', '')}".strip()
-            owners[str(o["id"])] = full_name or o.get("email", str(o["id"]))
+            name = full_name or o.get("email", "")
+            # Guardar por id numérico (como string) y como string directo
+            owners[str(o["id"])] = name
     return owners
 
 
@@ -191,6 +195,7 @@ def get_contacts(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
 COMPANY_PROPS = [
     "name", "domain", "industry", "city", "country",
     "hubspot_owner_id", "createdate", "numberofemployees",
+    "cliente_bullseye_empresa",   # propiedad personalizada BullsEye
 ]
 
 
@@ -206,13 +211,14 @@ def get_companies(token: str, account_name: str, days: int = 90) -> pd.DataFrame
         p = r.get("properties", {})
         owner_id = str(p.get("hubspot_owner_id", ""))
         rows.append({
-            "id":             r["id"],
-            "account":        account_name,
-            "empresa":        p.get("name", ""),
-            "industria":      p.get("industry", ""),
-            "ciudad":         p.get("city", ""),
-            "sdr":            owners.get(owner_id, owner_id),
-            "fecha_creacion": pd.to_datetime(p.get("createdate"), utc=True, errors="coerce"),
+            "id":                     r["id"],
+            "account":                account_name,
+            "empresa":                p.get("name", ""),
+            "industria":              p.get("industry", ""),
+            "ciudad":                 p.get("city", ""),
+            "sdr":                    owners.get(owner_id, owner_id),
+            "cliente_bullseye":       p.get("cliente_bullseye_empresa", ""),
+            "fecha_creacion":         pd.to_datetime(p.get("createdate"), utc=True, errors="coerce"),
         })
 
     df = pd.DataFrame(rows)
