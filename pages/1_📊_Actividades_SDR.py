@@ -48,6 +48,16 @@ with st.sidebar:
     activity_types = ["Todos"] + (sorted(activities_df["tipo"].unique().tolist()) if not activities_df.empty else [])
     sel_type = st.selectbox("Tipo de actividad", activity_types)
 
+# ── Combinar actividades + llamadas (calls ya no están en activities_df) ──────
+if not calls_df.empty:
+    calls_as_act = calls_df[["id", "account", "fecha", "sdr", "dia", "semana", "mes"]].copy()
+    calls_as_act["tipo"] = "Llamada"
+    # Unir con activities (meetings + emails)
+    if not activities_df.empty:
+        activities_df = pd.concat([activities_df, calls_as_act], ignore_index=True)
+    else:
+        activities_df = calls_as_act
+
 # ── Aplicar filtros ───────────────────────
 df = activities_df.copy()
 if not df.empty:

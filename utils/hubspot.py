@@ -12,7 +12,8 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import lru_cache
+# Cache manual de owners: solo guarda resultados no vacíos y reintenta si falló
+_owners_cache: dict = {}
 
 
 # ─────────────────────────────────────────
@@ -74,27 +75,35 @@ def _search(obj_type: str, token: str, properties: list,
 #  Owners (SDRs) — cacheado para no repetir
 # ─────────────────────────────────────────
 
-@lru_cache(maxsize=32)
 def get_owners(token: str) -> dict:
     """
     Devuelve dict {owner_id_str: nombre_completo}.
-    Usa lru_cache (Python puro) en vez de @st.cache_data para que funcione
-    correctamente cuando se llama desde dentro de otras funciones cacheadas.
+    Cache manual: solo guarda si la respuesta tiene datos (evita cachear errores).
     """
+    # Devolver desde cache solo si tiene datos
+    if token in _owners_cache and _owners_cache[token]:
+        return _owners_cache[token]
+
+    owners = {}
     try:
         resp = requests.get(
             "https://api.hubapi.com/crm/v3/owners",
             headers=_headers(token),
+            params={"limit": 500},
             timeout=30,
         )
-        owners = {}
         if resp.status_code == 200:
             for o in resp.json().get("results", []):
                 full_name = f"{o.get('firstName', '')} {o.get('lastName', '')}".strip()
                 owners[str(o["id"])] = full_name or o.get("email", str(o["id"]))
-        return owners
     except Exception:
-        return {}
+        pass
+
+    # Solo cachear si obtuvimos resultados
+    if owners:
+        _owners_cache[token] = owners
+
+    return owners
 
 
 def _owner_name(owners: dict, owner_id) -> str:
