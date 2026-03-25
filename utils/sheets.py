@@ -88,34 +88,14 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
 
     import io
 
-    # ── Paso 1: Obtener el ID numérico (gid) de la pestaña via metadatos ──────
-    # Esto evita los problemas de encoding con tildes en el nombre.
-    # La API de metadatos sí acepta la API key sin problemas.
-    gid = 0  # gid 0 = primera pestaña (fallback)
-    try:
-        meta_resp = requests.get(
-            f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}",
-            params={"key": api_key, "fields": "sheets.properties"},
-            timeout=30,
-        )
-        if meta_resp.status_code == 200:
-            for sheet in meta_resp.json().get("sheets", []):
-                props = sheet.get("properties", {})
-                if props.get("title", "").strip().lower() == tab_name.strip().lower():
-                    gid = props.get("sheetId", 0)
-                    break
-    except Exception:
-        pass  # usamos gid=0 como fallback
-
-    # ── Paso 2: Exportar como CSV usando el gid numérico ──────────────────────
-    # La URL de exportación lee TODOS los datos crudos, ignorando cualquier
-    # filtro activo que el equipo tenga aplicado en la vista del sheet.
-    export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export"
-    resp = requests.get(
-        export_url,
-        params={"format": "csv", "gid": gid},
-        timeout=30,
+    # ── Exportar como CSV usando el nombre de la pestaña directamente ─────────
+    # El endpoint gviz/tq acepta el nombre de la pestaña sin necesitar su gid.
+    # Lee TODOS los datos crudos, ignorando cualquier filtro activo en el sheet.
+    export_url = (
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+        f"/gviz/tq?tqx=out:csv&sheet={requests.utils.quote(tab_name)}"
     )
+    resp = requests.get(export_url, timeout=30)
 
     if resp.status_code != 200:
         st.error(f"Error exportando Google Sheet (código {resp.status_code})")
