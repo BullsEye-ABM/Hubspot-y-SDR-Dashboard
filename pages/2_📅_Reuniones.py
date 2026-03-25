@@ -49,6 +49,19 @@ if df_raw.empty:
     st.info("Verifica que el sheet_id, la pestaña y el api_key sean correctos en secrets.toml.")
     st.stop()
 
+# ── Debug de columnas (siempre visible para facilitar diagnóstico) ─────────────
+with st.expander("🔧 Diagnóstico de columnas del sheet", expanded=False):
+    orig_cols = df_raw.attrs.get("_debug_cols_original", [])
+    mapped_cols = df_raw.attrs.get("_debug_cols_mapped", [])
+    st.write("**Columnas leídas del sheet:**", orig_cols)
+    st.write("**Columnas mapeadas correctamente:**", mapped_cols)
+    claves_criticas = ["fecha_agendamiento", "fecha_reunion", "realizado", "sdr", "cliente"]
+    faltantes = [c for c in claves_criticas if c not in df_raw.columns]
+    if faltantes:
+        st.error(f"Columnas críticas NO encontradas: {faltantes}")
+    else:
+        st.success("Todas las columnas críticas fueron encontradas.")
+
 today = date.today()
 
 # ── Estado de cada reunión ─────────────────────────────────────────────────────
@@ -180,6 +193,27 @@ if sel_estado:
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+def _agg_by(source_df: pd.DataFrame, group_col: str, extra_fn=None) -> pd.DataFrame:
+    """
+    Agrupa source_df por group_col y aplica resumen() a cada grupo.
+    Compatible con cualquier versión de pandas (evita reset_index conflict en 2.2+).
+    extra_fn(group) → dict, si se quiere agregar campos extra por grupo.
+    """
+    rows = []
+    for key, group in source_df.groupby(group_col):
+        row = resumen(group).to_dict()
+        row[group_col] = key
+        if extra_fn:
+            row.update(extra_fn(group))
+        rows.append(row)
+    if not rows:
+        return pd.DataFrame()
+    result = pd.DataFrame(rows)
+    # Poner group_col como primera columna
+    cols = [group_col] + [c for c in result.columns if c != group_col]
+    return result[cols]
+
+
 def resumen(g: pd.DataFrame) -> pd.Series:
     total = len(g)
     realizadas = (g["estado"] == "Realizada").sum()
@@ -262,9 +296,7 @@ with tab_periodo:
 
     if mes_col in df.columns and df[mes_col].ne("").any():
         monthly = (
-            df.groupby(mes_col)
-            .apply(resumen)
-            .reset_index()
+            _agg_by(df, mes_col)
             .rename(columns={mes_col: "Mes"})
             .sort_values("Mes")
         )
@@ -312,9 +344,7 @@ with tab_sdr:
         st.warning("No se encontró la columna de SDR/Responsable.")
     else:
         sdr_df = (
-            df.groupby("sdr")
-            .apply(resumen)
-            .reset_index()
+            _agg_by(df, "sdr")
             .rename(columns={"sdr": "SDR"})
         )
         sdr_df = add_tasa(sdr_df)
@@ -349,18 +379,15 @@ with tab_sdr:
         with st.expander("📆 Ver desglose mensual por SDR"):
             mes_col2 = "mes_agenda" if "mes_agenda" in df.columns else "mes"
             if mes_col2 in df.columns:
-                sdr_monthly = (
-                    df.groupby([mes_col2, "sdr"])
-                    .apply(lambda g: pd.Series({"Agendadas": len(g), "Realizadas": (g["estado"] == "Realizada").sum()}))
-                    .reset_index()
-                    .rename(columns={mes_col2: "Mes", "sdr": "SDR"})
-                    .sort_values(["Mes", "Agendadas"], ascending=[True, False])
-                )
-                sdr_monthly["Tasa"] = sdr_monthly.apply(
-                    lambda r: f"{round(r['Realizadas']/r['Agendadas']*100,1)}%" if r['Agendadas'] > 0 else "—",
-                    axis=1,
-                )
-                st.dataframe(sdr_monthly, use_container_width=True, hide_index=True)
+                rows_sm = []
+                for (mes, sdr), g in df.groupby([mes_col2, "sdr"]):
+                    ag = len(g)
+                    re = (g["estado"] == "Realizada").sum()
+                    tasa = f"{round(re/ag*100,1)}%" if ag > 0 else "—"
+                    rows_sm.append({"Mes": mes, "SDR": sdr, "Agendadas": ag, "Realizadas": int(re), "Tasa": tasa})
+                if rows_sm:
+                    sdr_monthly = pd.DataFrame(rows_sm).sort_values(["Mes", "Agendadas"], ascending=[True, False])
+                    st.dataframe(sdr_monthly, use_container_width=True, hide_index=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -374,15 +401,11 @@ with tab_cliente:
     else:
         df_cli = df[df["cliente"].replace({"": pd.NA, "nan": pd.NA}).notna()].copy()
 
-        def resumen_cli(g):
-            s = resumen(g)
-            s["SDRs"] = int(g["sdr"].nunique()) if "sdr" in g.columns else 0
-            return s
-
         cli_df = (
-            df_cli.groupby("cliente")
-            .apply(resumen_cli)
-            .reset_index()
+            _agg_by(
+                df_cli, "cliente",
+                extra_fn=lambda g: {"SDRs": int(g["sdr"].nunique()) if "sdr" in g.columns else 0}
+            )
             .rename(columns={"cliente": "Cliente"})
         )
         cli_df = add_tasa(cli_df)
@@ -418,18 +441,15 @@ with tab_cliente:
         with st.expander("📆 Ver desglose mensual por cliente"):
             mes_col3 = "mes_agenda" if "mes_agenda" in df_cli.columns else "mes"
             if mes_col3 in df_cli.columns:
-                cli_monthly = (
-                    df_cli.groupby([mes_col3, "cliente"])
-                    .apply(lambda g: pd.Series({"Agendadas": len(g), "Realizadas": (g["estado"] == "Realizada").sum()}))
-                    .reset_index()
-                    .rename(columns={mes_col3: "Mes", "cliente": "Cliente"})
-                    .sort_values(["Mes", "Agendadas"], ascending=[True, False])
-                )
-                cli_monthly["Tasa"] = cli_monthly.apply(
-                    lambda r: f"{round(r['Realizadas']/r['Agendadas']*100,1)}%" if r['Agendadas'] > 0 else "—",
-                    axis=1,
-                )
-                st.dataframe(cli_monthly, use_container_width=True, hide_index=True)
+                rows_cm = []
+                for (mes, cli), g in df_cli.groupby([mes_col3, "cliente"]):
+                    ag = len(g)
+                    re = (g["estado"] == "Realizada").sum()
+                    tasa = f"{round(re/ag*100,1)}%" if ag > 0 else "—"
+                    rows_cm.append({"Mes": mes, "Cliente": cli, "Agendadas": ag, "Realizadas": int(re), "Tasa": tasa})
+                if rows_cm:
+                    cli_monthly = pd.DataFrame(rows_cm).sort_values(["Mes", "Agendadas"], ascending=[True, False])
+                    st.dataframe(cli_monthly, use_container_width=True, hide_index=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

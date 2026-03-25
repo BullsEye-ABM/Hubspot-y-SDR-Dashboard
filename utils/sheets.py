@@ -133,20 +133,13 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         return pd.DataFrame()
 
     # Renombrar columnas al nombre interno (con matching flexible)
-    rename_map = _build_rename_map(df.columns.tolist())
+    _original_cols = df.columns.tolist()
+    rename_map = _build_rename_map(_original_cols)
     df = df.rename(columns=rename_map)
 
-    # Debug: mostrar columnas encontradas y no encontradas (solo en modo dev)
-    import os
-    if os.environ.get("BULLSEYE_DEBUG") == "1":
-        mapped = set(rename_map.values())
-        all_internal = set(COLUMN_MAP.keys())
-        missing = all_internal - mapped
-        with st.expander("🔧 Debug columnas del sheet", expanded=True):
-            st.write("**Columnas en el sheet:**", df.columns.tolist())
-            st.write("**Mapeadas correctamente:**", sorted(mapped))
-            if missing:
-                st.warning(f"**No encontradas:** {sorted(missing)}")
+    # Guardar info de debug en el df para que la página la muestre
+    df.attrs["_debug_cols_original"] = _original_cols
+    df.attrs["_debug_cols_mapped"] = sorted(rename_map.values())
 
     # Eliminar filas completamente vacías
     df = df.replace("", pd.NA).dropna(how="all").fillna("")
