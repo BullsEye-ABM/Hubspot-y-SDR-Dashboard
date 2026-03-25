@@ -362,6 +362,7 @@ total            = len(df)
 realizadas_total = (df["estado"] == "Realizada").sum()
 pendientes_total = (df["estado"] == "Pendiente").sum()
 no_real_total    = (df["estado"] == "No realizada").sum()
+reagendar_total  = (df["estado"] == "Reagendar").sum()
 tasa_total       = round(realizadas_total / total * 100, 1) if total > 0 else 0
 prop_total       = 0
 if "propuesta" in df.columns:
@@ -372,13 +373,14 @@ periodo_str = f"{start_date.strftime('%d/%m/%Y')} → {end_date.strftime('%d/%m/
 st.caption(f"Período: **{periodo_str}** · {total:,} reuniones con los filtros actuales")
 st.divider()
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 c1.metric("📋 Agendadas",       f"{total:,}")
 c2.metric("✅ Realizadas",       f"{realizadas_total:,}")
 c3.metric("⏳ Pendientes",       f"{pendientes_total:,}")
-c4.metric("❌ No realizadas",    f"{no_real_total:,}")
-c5.metric("📈 Tasa realización", f"{tasa_total}%")
-c6.metric("📄 Con propuesta",    f"{prop_total:,}")
+c4.metric("🔄 Reagendar",        f"{reagendar_total:,}")
+c5.metric("❌ No realizadas",    f"{no_real_total:,}")
+c6.metric("📈 Tasa realización", f"{tasa_total}%")
+c7.metric("📄 Con propuesta",    f"{prop_total:,}")
 st.divider()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
