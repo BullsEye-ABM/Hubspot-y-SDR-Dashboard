@@ -15,7 +15,7 @@ const SPREADSHEET_ID  = "11vYlkzNlRwmEpGbeDNWpceDlhh36-B9gIgXU_emuRRk";
 const MAESTRA_TAB     = "Maestra IA";
 const OUTPUT_TAB      = "API Reuniones - IA";
 
-// Columnas del sheet de salida (mismo orden que el formulario)
+// Columnas del sheet de salida
 const OUTPUT_HEADERS = [
   "Cliente",
   "Origen",
@@ -27,9 +27,9 @@ const OUTPUT_HEADERS = [
   "Hora",
   "País",
   "Realizado",
-  "Propuesta/Oportunidad",
   "Sales Manager",
   "Cargo",
+  "Correo",
   "Teléfono",
   "Industria",
   "Comentario de la reunión",
@@ -144,25 +144,30 @@ function saveReunion(p) {
     new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss"
   );
 
-  const row = [
-    p.cliente      || "",
-    p.origen       || "",
-    p.responsable  || "",
-    p.empresa      || "",
-    p.contactos    || "",
-    p.fecha_agendamiento || "",
-    p.fecha_reunion      || "",
-    p.hora         || "",
-    p.pais         || "",
-    p.realizado    || "",
-    p.propuesta    || "",
-    p.sales_manager|| "",
-    p.cargo        || "",
-    p.telefono     || "",
-    p.industria    || "",
-    p.comentario   || "",
-    now
-  ];
+  // Mapa de valores por nombre de columna
+  const values = {
+    "Cliente":                p.cliente            || "",
+    "Origen":                 p.origen             || "",
+    "Responsable":            p.responsable        || "",
+    "Empresa":                p.empresa            || "",
+    "Contactos/Correo":       p.contactos          || "",
+    "Fecha de agendamiento":  p.fecha_agendamiento || "",
+    "Fecha de la reunión":    p.fecha_reunion       || "",
+    "Hora":                   p.hora               || "",
+    "País":                   p.pais               || "",
+    "Realizado":              p.realizado          || "",
+    "Sales Manager":          p.sales_manager      || "",
+    "Cargo":                  p.cargo              || "",
+    "Correo":                 p.correo             || "",
+    "Teléfono":               p.telefono           || "",
+    "Industria":              p.industria          || "",
+    "Comentario de la reunión": p.comentario       || "",
+    "Fecha de registro":      now
+  };
+
+  // Leer headers actuales del sheet y construir la fila en el orden correcto
+  const sheetHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const row = sheetHeaders.map(h => values[h.toString().trim()] ?? "");
 
   sheet.appendRow(row);
 }
