@@ -177,9 +177,20 @@ with st.sidebar:
     st.caption(f"📅 {start_date.strftime('%d/%m/%Y')} → {end_date.strftime('%d/%m/%Y')}")
     st.divider()
 
-    sdrs_list = ["Todos"] + sorted(
-        df_raw["sdr"].replace({"Sin asignar": pd.NA, "nan": pd.NA}).dropna().unique().tolist()
-    )
+    if "sdr" in df_raw.columns:
+        sdrs_list = ["Todos"] + sorted(
+            df_raw["sdr"].replace({"Sin asignar": pd.NA, "nan": pd.NA}).dropna().unique().tolist()
+        )
+    else:
+        # Fallback: buscar columna "Responsable" directamente si el mapeo no funcionó
+        _col_sdr = next((c for c in df_raw.columns if "responsable" in c.lower() or c.lower() == "sdr"), None)
+        if _col_sdr:
+            sdrs_list = ["Todos"] + sorted(
+                df_raw[_col_sdr].replace({"Sin asignar": pd.NA, "nan": pd.NA}).dropna().unique().tolist()
+            )
+            df_raw = df_raw.rename(columns={_col_sdr: "sdr"})
+        else:
+            sdrs_list = ["Todos"]
     sel_sdr = st.selectbox("SDR / Responsable", sdrs_list)
 
     if "cliente" in df_raw.columns:
