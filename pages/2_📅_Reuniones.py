@@ -195,12 +195,16 @@ with st.sidebar:
 # ── Aplicar filtros ────────────────────────────────────────────────────────────
 df = df_raw.copy()
 
+# Para el filtro de período: si la columna elegida (ej. fecha_reunion) está vacía
+# en alguna fila, usamos fecha_agendamiento como respaldo para no perder esa fila.
 if fecha_col in df.columns:
-    df = df[df[fecha_col].notna()]
-    df = df[(df[fecha_col].dt.date >= start_date) & (df[fecha_col].dt.date <= end_date)]
-elif "fecha" in df.columns:
-    df = df[df["fecha"].notna()]
-    df = df[(df["fecha"].dt.date >= start_date) & (df["fecha"].dt.date <= end_date)]
+    fallback = df["fecha_agendamiento"] if "fecha_agendamiento" in df.columns else pd.Series(dtype="datetime64[ns]")
+    fecha_efectiva = df[fecha_col].fillna(fallback)
+else:
+    fecha_efectiva = df.get("fecha", pd.Series(dtype="datetime64[ns]"))
+
+df = df[fecha_efectiva.notna()]
+df = df[(fecha_efectiva[df.index].dt.date >= start_date) & (fecha_efectiva[df.index].dt.date <= end_date)]
 
 if sel_sdr != "Todos" and "sdr" in df.columns:
     df = df[df["sdr"] == sel_sdr]

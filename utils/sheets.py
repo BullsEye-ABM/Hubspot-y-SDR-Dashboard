@@ -176,7 +176,11 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
             )
 
     # Columna "fecha" principal = fecha de la reunión reservada
-    if "fecha_reunion" in df.columns and df["fecha_reunion"].notna().any():
+    # Si una fila no tiene fecha_reunion (col O vacía), cae a fecha_agendamiento
+    # para no perder esas filas en el dropna.
+    if "fecha_reunion" in df.columns and "fecha_agendamiento" in df.columns:
+        df["fecha"] = df["fecha_reunion"].fillna(df["fecha_agendamiento"])
+    elif "fecha_reunion" in df.columns:
         df["fecha"] = df["fecha_reunion"]
     elif "fecha_agendamiento" in df.columns:
         df["fecha"] = df["fecha_agendamiento"]
