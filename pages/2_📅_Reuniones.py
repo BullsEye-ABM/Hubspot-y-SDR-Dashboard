@@ -49,18 +49,33 @@ if df_raw.empty:
     st.info("Verifica que el sheet_id, la pestaña y el api_key sean correctos en secrets.toml.")
     st.stop()
 
-# ── Debug de columnas (siempre visible para facilitar diagnóstico) ─────────────
-with st.expander("🔧 Diagnóstico de columnas del sheet", expanded=False):
-    orig_cols = df_raw.attrs.get("_debug_cols_original", [])
+# ── Debug (expandible) ─────────────────────────────────────────────────────────
+with st.expander("🔧 Diagnóstico técnico", expanded=False):
+    method   = df_raw.attrs.get("_fetch_method", "desconocido")
+    v4_err   = df_raw.attrs.get("_v4_error")
+    row_raw  = df_raw.attrs.get("_row_count_raw", len(df_raw))
+    orig_cols   = df_raw.attrs.get("_debug_cols_original", [])
     mapped_cols = df_raw.attrs.get("_debug_cols_mapped", [])
-    st.write("**Columnas leídas del sheet:**", orig_cols)
-    st.write("**Columnas mapeadas correctamente:**", mapped_cols)
-    claves_criticas = ["fecha_agendamiento", "fecha_reunion", "realizado", "sdr", "cliente"]
-    faltantes = [c for c in claves_criticas if c not in df_raw.columns]
+
+    st.markdown(f"**Método de lectura:** {method}")
+    st.markdown(f"**Filas leídas del sheet:** {row_raw}")
+    if v4_err:
+        st.warning(f"API v4 falló → {v4_err}")
+        st.info(
+            "Para ignorar filtros del equipo 100%, habilita la Sheets API v4:\n\n"
+            "1. Ve a https://console.cloud.google.com\n"
+            "2. Selecciona el proyecto de tu API key\n"
+            "3. APIs y servicios → Habilitar APIs\n"
+            "4. Busca **Google Sheets API** → Habilitar"
+        )
+    st.write("**Columnas leídas:**", orig_cols)
+    st.write("**Columnas mapeadas:**", mapped_cols)
+    criticas = ["fecha_agendamiento", "fecha_reunion", "realizado", "sdr", "cliente"]
+    faltantes = [c for c in criticas if c not in df_raw.columns]
     if faltantes:
         st.error(f"Columnas críticas NO encontradas: {faltantes}")
     else:
-        st.success("Todas las columnas críticas fueron encontradas.")
+        st.success("Todas las columnas críticas encontradas ✅")
 
 today = date.today()
 

@@ -94,7 +94,10 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
     # MÉTODO 2 (fallback): gviz/tq con tq=select * (fuerza lectura completa).
     df = None
 
-    # — Método 1: Sheets API v4 values.get ────────────────────────────────────
+    _method_used = "desconocido"
+    _v4_error    = None
+
+    # — Método 1: Sheets API v4 values.get (ignora filtros activos) ───────────
     try:
         range_name = requests.utils.quote(f"'{tab_name}'", safe="'")
         v4_url = (
@@ -111,16 +114,19 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
             rows = payload.get("values", [])
             if len(rows) >= 2:
                 headers = rows[0]
-                # Alinear filas más cortas que el encabezado
                 data_rows = [
                     r + [""] * (len(headers) - len(r)) for r in rows[1:]
                 ]
                 df = pd.DataFrame(data_rows, columns=headers).fillna("")
-    except Exception:
-        pass  # sigue al fallback
+                _method_used = "Sheets API v4 ✅ (ignora filtros del equipo)"
+        else:
+            _v4_error = f"HTTP {v4_resp.status_code}: {v4_resp.text[:200]}"
+    except Exception as exc:
+        _v4_error = str(exc)
 
-    # — Método 2 (fallback): gviz/tq forzando SELECT * ─────────────────────
+    # — Método 2 (fallback): gviz/tq — SÍ respeta filtros activos ────────────
     if df is None or df.empty:
+        _method_used = "gviz/tq fallback ⚠️ (puede respetar filtros del equipo)"
         tq_url = (
             f"https://docs.google.com/spreadsheets/d/{sheet_id}"
             f"/gviz/tq?tqx=out:csv"
@@ -139,6 +145,11 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
     if df is None or df.empty:
         st.warning("El Google Sheet no tiene datos.")
         return pd.DataFrame()
+
+    # Guardar estado del método para el diagnóstico
+    df.attrs["_fetch_method"] = _method_used
+    df.attrs["_v4_error"]     = _v4_error
+    df.attrs["_row_count_raw"] = len(df)
 
     # Renombrar columnas al nombre interno (con matching flexible)
     _original_cols = df.columns.tolist()
