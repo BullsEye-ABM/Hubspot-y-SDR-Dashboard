@@ -6,33 +6,31 @@
   <title>BullsEye — Nueva Reunión</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" />
   <style>
     /* ── Variables ─────────────────────────────────────────────────────── */
     :root {
-      --bg:          #080a1c;
-      --bg-card:     rgba(255,255,255,0.035);
-      --bg-input:    rgba(255,255,255,0.055);
-      --accent:      #00d4ff;
-      --accent-dim:  rgba(0,212,255,0.15);
-      --text:        #f0f2ff;
-      --muted:       rgba(240,242,255,0.45);
-      --border:      rgba(0,212,255,0.13);
-      --border-focus:rgba(0,212,255,0.55);
-      --success:     #00c9a7;
-      --error:       #ff6b6b;
-      --navy:        #1a1b4d;
-      --radius:      12px;
+      --bg:           #080a1c;
+      --bg-card:      rgba(255,255,255,0.035);
+      --bg-input:     rgba(255,255,255,0.055);
+      --accent:       #00d4ff;
+      --accent-dim:   rgba(0,212,255,0.15);
+      --text:         #f0f2ff;
+      --muted:        rgba(240,242,255,0.45);
+      --border:       rgba(0,212,255,0.13);
+      --border-focus: rgba(0,212,255,0.55);
+      --success:      #00c9a7;
+      --error:        #ff6b6b;
+      --navy:         #1a1b4d;
+      --radius:       12px;
     }
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
       font-family: 'Inter', system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       padding: 48px 20px 100px;
-      /* Subtle radial glow */
       background-image:
         radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,212,255,0.07) 0%, transparent 60%),
         radial-gradient(ellipse 50% 40% at 100% 80%, rgba(26,27,77,0.6) 0%, transparent 60%);
@@ -43,19 +41,20 @@
 
     /* ── Header ──────────────────────────────────────────────────────────── */
     .header { text-align: center; margin-bottom: 44px; }
-
-    .logo {
-      display: inline-flex; align-items: center; gap: 14px; margin-bottom: 28px;
-      text-decoration: none;
+    .logo-wrap { margin-bottom: 28px; display: flex; justify-content: center; }
+    .logo-img  { height: 52px; width: auto; object-fit: contain; }
+    /* Fallback si no carga la imagen */
+    .logo-fallback {
+      display: none; align-items: center; gap: 14px;
     }
-    .logo-mark {
+    .logo-fallback .logo-mark {
       width: 48px; height: 48px; background: var(--accent);
       border-radius: 50%; display: flex; align-items: center;
       justify-content: center; font-size: 22px;
       box-shadow: 0 0 24px rgba(0,212,255,0.35);
     }
-    .logo-name { font-size: 24px; font-weight: 700; letter-spacing: .4px; color: #fff; }
-    .logo-name span { color: var(--accent); }
+    .logo-fallback .logo-name { font-size: 24px; font-weight: 700; color: #fff; }
+    .logo-fallback .logo-name span { color: var(--accent); }
 
     .header h1 { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
     .header p  { color: var(--muted); font-size: 14px; }
@@ -69,7 +68,6 @@
       margin-bottom: 18px;
       backdrop-filter: blur(12px);
     }
-
     .card-title {
       font-size: 11.5px; font-weight: 600; text-transform: uppercase;
       letter-spacing: 1.2px; color: var(--accent);
@@ -80,20 +78,14 @@
 
     /* ── Grid ────────────────────────────────────────────────────────────── */
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
     .full   { grid-column: 1 / -1; }
-    @media (max-width: 580px) {
-      .grid-2, .grid-3 { grid-template-columns: 1fr; }
-    }
+    @media (max-width: 580px) { .grid-2 { grid-template-columns: 1fr; } }
 
     /* ── Field ───────────────────────────────────────────────────────────── */
     .field { display: flex; flex-direction: column; gap: 6px; }
-
-    .field label {
-      font-size: 12.5px; font-weight: 500; color: rgba(240,242,255,.7);
-    }
+    .field label { font-size: 12.5px; font-weight: 500; color: rgba(240,242,255,.7); }
+    .field-hint { font-size: 11.5px; color: var(--muted); margin-top: -2px; }
     .req { color: var(--accent); margin-left: 2px; }
-
     .field input,
     .field select,
     .field textarea {
@@ -119,40 +111,16 @@
     .field select option { background: #1a1b4d; color: #fff; }
     .field textarea { resize: vertical; min-height: 96px; }
     .field input::placeholder, .field textarea::placeholder { color: var(--muted); }
-
-    .field input:focus,
-    .field select:focus,
-    .field textarea:focus {
+    .field input:focus, .field select:focus, .field textarea:focus {
       border-color: var(--border-focus);
       box-shadow: 0 0 0 3px rgba(0,212,255,.09);
     }
-
-    /* Field error state */
-    .field.err input, .field.err select { border-color: var(--error); }
+    .field.err input, .field.err select, .field.err .ts-control { border-color: var(--error) !important; }
     .field-err { font-size: 11.5px; color: var(--error); display: none; }
     .field.err .field-err { display: block; }
 
-    /* ── Radio pill group ─────────────────────────────────────────────────── */
-    .pill-group { display: flex; gap: 10px; flex-wrap: wrap; }
-    .pill input[type="radio"] { display: none; }
-    .pill label {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 8px 16px;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 50px;
-      cursor: pointer; font-size: 13px; font-weight: 500;
-      transition: all .15s; user-select: none;
-    }
-    .pill input[type="radio"]:checked + label {
-      background: var(--accent-dim);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
     /* ── Submit ───────────────────────────────────────────────────────────── */
     .submit-wrap { margin-top: 6px; }
-
     .btn {
       width: 100%; padding: 15px;
       background: linear-gradient(135deg, #00d4ff 0%, #0095cc 100%);
@@ -165,8 +133,6 @@
     .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(0,212,255,.3); }
     .btn:active { transform: translateY(0); }
     .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
-
-    /* Spinner */
     .spin {
       width: 17px; height: 17px; border-radius: 50%;
       border: 2.5px solid rgba(6,7,26,.25); border-top-color: #06071a;
@@ -175,7 +141,7 @@
     .loading .spin { display: block; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Status toast ─────────────────────────────────────────────────────── */
+    /* ── Toast ───────────────────────────────────────────────────────────── */
     .toast {
       display: none; margin-top: 16px; padding: 14px 18px;
       border-radius: var(--radius); font-size: 14px; font-weight: 500;
@@ -185,15 +151,91 @@
     .toast.ok     { background: rgba(0,201,167,.1);  border:1px solid rgba(0,201,167,.3);  color: #00c9a7; }
     .toast.fail   { background: rgba(255,107,107,.1); border:1px solid rgba(255,107,107,.3); color: #ff6b6b; }
 
-    /* ── Loading overlay for dropdown fetch ───────────────────────────────── */
-    .fetch-status {
-      text-align: center; padding: 12px;
-      font-size: 13px; color: var(--muted);
-      display: none;
-    }
+    /* ── Loading dropdowns ───────────────────────────────────────────────── */
+    .fetch-status { text-align: center; padding: 12px; font-size: 13px; color: var(--muted); display: none; }
     .fetch-status.show { display: block; }
 
-    /* ── flatpickr dark theme override ───────────────────────────────────── */
+    /* ── Summary card ────────────────────────────────────────────────────── */
+    .summary-card { display: none; }
+    .summary-header {
+      font-size: 18px; font-weight: 700; color: var(--success);
+      margin-bottom: 20px; text-align: center;
+    }
+    .summary-box {
+      background: rgba(0,201,167,.06);
+      border: 1px solid rgba(0,201,167,.25);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      font-size: 14.5px;
+      line-height: 1.75;
+      white-space: pre-line;
+      color: var(--text);
+      margin-bottom: 18px;
+      font-family: 'Inter', monospace;
+    }
+    .btn-group { display: flex; gap: 12px; }
+    .btn-outline {
+      flex: 1; padding: 13px;
+      background: transparent;
+      border: 1px solid var(--border-focus);
+      border-radius: var(--radius);
+      color: var(--accent);
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-outline:hover { background: var(--accent-dim); }
+
+    /* ── Tom Select dark theme ───────────────────────────────────────────── */
+    .ts-wrapper .ts-control {
+      background: var(--bg-input) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius) !important;
+      color: var(--text) !important;
+      padding: 7px 12px !important;
+      min-height: 41px !important;
+      box-shadow: none !important;
+      cursor: text !important;
+      flex-wrap: nowrap !important;
+    }
+    .ts-wrapper.focus .ts-control {
+      border-color: var(--border-focus) !important;
+      box-shadow: 0 0 0 3px rgba(0,212,255,.09) !important;
+      outline: none !important;
+    }
+    .ts-wrapper .ts-control input {
+      color: var(--text) !important;
+      background: transparent !important;
+      font-family: 'Inter', sans-serif !important;
+      font-size: 14px !important;
+    }
+    .ts-wrapper .ts-control input::placeholder { color: var(--muted) !important; }
+    .ts-wrapper .ts-control .item { color: var(--text) !important; }
+    .ts-dropdown {
+      background: #12143a !important;
+      border: 1px solid var(--border-focus) !important;
+      border-radius: var(--radius) !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,.55) !important;
+      margin-top: 4px !important;
+    }
+    .ts-dropdown .option {
+      color: var(--text) !important;
+      padding: 9px 14px !important;
+      font-size: 14px;
+    }
+    .ts-dropdown .option:hover,
+    .ts-dropdown .option.active {
+      background: var(--accent-dim) !important;
+      color: var(--accent) !important;
+    }
+    .ts-dropdown .no-results {
+      color: var(--muted) !important;
+      background: transparent !important;
+    }
+    /* Ocultar el chevron nativo de Tom Select y usar el nuestro */
+    .ts-wrapper .ts-control::after { border-top-color: var(--accent) !important; }
+
+    /* ── Flatpickr dark ──────────────────────────────────────────────────── */
     .flatpickr-calendar {
       background: #1a1b4d !important;
       border: 1px solid var(--border) !important;
@@ -201,13 +243,10 @@
     }
     .flatpickr-day { color: var(--text) !important; }
     .flatpickr-day.selected, .flatpickr-day.selected:hover {
-      background: var(--accent) !important;
-      border-color: var(--accent) !important;
-      color: #06071a !important;
+      background: var(--accent) !important; border-color: var(--accent) !important; color: #06071a !important;
     }
     .flatpickr-day:hover { background: var(--accent-dim) !important; }
-    .flatpickr-months .flatpickr-month,
-    .flatpickr-weekdays,
+    .flatpickr-months .flatpickr-month, .flatpickr-weekdays,
     span.flatpickr-weekday { background: #1a1b4d !important; color: var(--text) !important; }
     .flatpickr-current-month, .flatpickr-current-month .numInputWrapper input,
     .flatpickr-current-month select { color: var(--text) !important; }
@@ -221,19 +260,26 @@
 
   <!-- ── Header ──────────────────────────────────────────────────────────── -->
   <div class="header">
-    <div class="logo">
-      <div class="logo-mark">🎯</div>
-      <div class="logo-name">Bulls<span>Eye</span></div>
+    <div class="logo-wrap">
+      <img src="./logo-white.png" alt="BullsEye" class="logo-img"
+           onerror="this.style.display='none'; document.getElementById('logo-fallback').style.display='flex';" />
+      <div class="logo-fallback" id="logo-fallback">
+        <div class="logo-mark">🎯</div>
+        <div class="logo-name">Bulls<span>Eye</span></div>
+      </div>
     </div>
     <h1>Registrar Nueva Reunión</h1>
-    <p>Completa todos los campos para registrar la reunión agendada en el sistema</p>
+    <p>Completa los campos para registrar la reunión agendada en el sistema</p>
   </div>
 
   <div class="fetch-status" id="fetch-status">⏳ Cargando opciones desde el sistema...</div>
 
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!--  FORMULARIO                                                         -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
   <form id="form" novalidate>
 
-    <!-- ── Sección 1: Reunión ─────────────────────────────────────────────── -->
+    <!-- ── 1. Información de la reunión ────────────────────────────────── -->
     <div class="card">
       <div class="card-title">📋 Información de la reunión</div>
       <div class="grid-2">
@@ -284,10 +330,9 @@
         </div>
 
         <div class="field">
-          <label>Realizado <span class="req">*</span></label>
-          <select name="realizado" required>
-            <option value="">Selecciona...</option>
-            <option value="Pendiente">⏳ Pendiente</option>
+          <label>Estado <span class="req">*</span></label>
+          <select name="realizado" id="s-realizado" required>
+            <option value="Pendiente" selected>⏳ Pendiente</option>
             <option value="Si">✅ Sí (realizada)</option>
             <option value="No">❌ No</option>
             <option value="Reagendar">🔄 Reagendar</option>
@@ -298,7 +343,7 @@
       </div>
     </div>
 
-    <!-- ── Sección 2: Empresa y Contacto ──────────────────────────────────── -->
+    <!-- ── 2. Empresa y contacto ────────────────────────────────────────── -->
     <div class="card">
       <div class="card-title">🏢 Empresa y contacto</div>
       <div class="grid-2">
@@ -310,8 +355,9 @@
         </div>
 
         <div class="field">
-          <label>Contacto / Nombre</label>
-          <input type="text" name="contactos" placeholder="Nombre del contacto" />
+          <label>Contacto / Nombre <span class="req">*</span></label>
+          <input type="text" name="contactos" placeholder="Nombre del contacto" required />
+          <span class="field-err">Requerido</span>
         </div>
 
         <div class="field">
@@ -325,8 +371,9 @@
         </div>
 
         <div class="field">
-          <label>Cargo</label>
-          <input type="text" name="cargo" placeholder="Ej: Gerente de Tecnología" />
+          <label>Cargo <span class="req">*</span></label>
+          <input type="text" name="cargo" placeholder="Ej: Gerente de Tecnología" required />
+          <span class="field-err">Requerido</span>
         </div>
 
         <div class="field">
@@ -338,44 +385,31 @@
         </div>
 
         <div class="field full">
-          <label>Industria</label>
-          <select name="industria" id="s-industria">
+          <label>Industria <span class="req">*</span></label>
+          <select name="industria" id="s-industria" required>
             <option value="">Selecciona la industria...</option>
           </select>
+          <span class="field-err">Requerido</span>
         </div>
 
       </div>
     </div>
 
-    <!-- ── Sección 3: Seguimiento ──────────────────────────────────────────── -->
+    <!-- ── 3. Seguimiento ───────────────────────────────────────────────── -->
     <div class="card">
       <div class="card-title">📊 Seguimiento</div>
       <div class="grid-2">
 
         <div class="field full">
-          <label>Propuesta / Oportunidad</label>
-          <div class="pill-group">
-            <div class="pill">
-              <input type="radio" name="propuesta" id="prop-no" value="No" checked />
-              <label for="prop-no">❌ No</label>
-            </div>
-            <div class="pill">
-              <input type="radio" name="propuesta" id="prop-si" value="Si" />
-              <label for="prop-si">✅ Sí</label>
-            </div>
-          </div>
-        </div>
-
-        <div class="field full">
           <label>Sales Manager</label>
+          <div class="field-hint">Rellenar solo en caso de que corresponda</div>
           <input type="text" name="sales_manager" placeholder="Nombre del Sales Manager" />
         </div>
 
         <div class="field full">
           <label>Comentario de la Reunión</label>
           <textarea name="comentario"
-            placeholder="Detalles relevantes de la reunión, próximos pasos, acuerdos...">
-          </textarea>
+            placeholder="Detalles relevantes, próximos pasos, acuerdos..."></textarea>
         </div>
 
       </div>
@@ -391,25 +425,45 @@
     </div>
 
   </form>
-</div>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!--  RESUMEN POST-ENVÍO                                                  -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <div class="card summary-card" id="summary-card">
+    <div class="summary-header">✅ ¡Reunión registrada!</div>
+    <p style="text-align:center; color:var(--muted); font-size:13px; margin-bottom:20px;">
+      Copia el resumen y compártelo por WhatsApp
+    </p>
+    <div class="summary-box" id="summary-box"></div>
+    <div class="btn-group">
+      <button class="btn-outline" onclick="copySummary()">📋 Copiar resumen</button>
+      <button class="btn-outline" onclick="resetForm()">➕ Registrar otra</button>
+    </div>
+    <div class="toast" id="toast-copy" style="margin-top:12px;"></div>
+  </div>
+
+</div><!-- /container -->
 
 <!-- ── Scripts ────────────────────────────────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 <script>
-// ════════════════════════════════════════════════════════════════════════════
-//  CONFIGURACIÓN — Pega aquí la URL de tu Google Apps Script desplegado
-// ════════════════════════════════════════════════════════════════════════════
-const SCRIPT_URL = "REEMPLAZAR_CON_URL_DEL_APPS_SCRIPT";
-// Ejemplo: "https://script.google.com/macros/s/AKfy.../exec"
-// ════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+//  CONFIGURACIÓN
+// ══════════════════════════════════════════════════════════════════════════════
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyRbG9TwFZI3l4arrTsDerZTH05GabWJ2e_bOOKWbrSuowa1D50tHM6UO1LiSmHiN99/exec";
+
+// IDs de selects que tendrán búsqueda (Tom Select)
+const SEARCHABLE_SELECTS = ["s-cliente", "s-sdr", "s-origen", "s-pais", "s-industria"];
+const tomInstances = {};
 
 // ── Inicializar al cargar ─────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
   initDatePickers();
   initTimePicker();
   if (SCRIPT_URL.startsWith("REEMPLAZAR")) {
-    showError("⚙️ Configura la URL del Apps Script en el archivo HTML (línea SCRIPT_URL)");
+    showToast("toast", "fail", "⚙️ Configura la URL del Apps Script.");
     document.getElementById("btn").disabled = true;
   } else {
     loadDropdowns();
@@ -419,23 +473,32 @@ document.addEventListener("DOMContentLoaded", () => {
 // ── Date pickers ─────────────────────────────────────────────────────────
 function initDatePickers() {
   const base = { locale: "es", dateFormat: "d/m/Y", disableMobile: true };
-  flatpickr("#fp-agenda", { ...base, defaultDate: "today" });
-  flatpickr("#fp-reunion", base);
+  flatpickr("#fp-agenda",  { ...base, defaultDate: "today" });
+  flatpickr("#fp-reunion", { ...base });
 }
 
-// ── Time picker (7:00 AM → 10:00 PM en intervalos de 30 min) ─────────────
+// ── Time picker ──────────────────────────────────────────────────────────
 function initTimePicker() {
   const sel = document.getElementById("s-hora");
   for (let h = 7; h <= 22; h++) {
     for (let m of [0, 30]) {
-      const hh   = String(h).padStart(2,"0");
-      const mm   = String(m).padStart(2,"0");
-      const suf  = h < 12 ? "AM" : "PM";
-      const h12  = h > 12 ? h - 12 : h === 0 ? 12 : h;
-      const lbl  = `${String(h12).padStart(2,"0")}:${mm} ${suf}`;
-      sel.appendChild(new Option(lbl, `${hh}:${mm}`));
+      const hh  = String(h).padStart(2,"0");
+      const mm  = String(m).padStart(2,"0");
+      const suf = h < 12 ? "AM" : "PM";
+      const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+      sel.appendChild(new Option(`${String(h12).padStart(2,"0")}:${mm} ${suf}`, `${hh}:${mm}`));
     }
   }
+}
+
+// ── Tom Select ───────────────────────────────────────────────────────────
+function initTomSelect(id) {
+  if (tomInstances[id]) { tomInstances[id].destroy(); delete tomInstances[id]; }
+  tomInstances[id] = new TomSelect(`#${id}`, {
+    allowEmptyOption: true,
+    maxOptions: null,
+    placeholder: document.querySelector(`#${id} option`)?.text || "Buscar...",
+  });
 }
 
 // ── Cargar dropdowns desde Apps Script ───────────────────────────────────
@@ -446,28 +509,35 @@ async function loadDropdowns() {
     const res  = await fetch(SCRIPT_URL);
     const json = await res.json();
     if (json.status === "ok") {
-      fill("s-cliente",  json.data.clientes);
-      fill("s-sdr",      json.data.sdrs);
-      fill("s-origen",   json.data.origenes);
-      fill("s-pais",     json.data.paises);
-      fill("s-industria",json.data.industrias);
+      fill("s-cliente",   json.data.clientes);
+      fill("s-sdr",       json.data.sdrs);
+      fill("s-origen",    json.data.origenes);
+      fill("s-pais",      json.data.paises);
+      fill("s-industria", json.data.industrias, true); // true = agregar "Otra" al final
+      // Inicializar Tom Select en los searchables DESPUÉS de llenar
+      SEARCHABLE_SELECTS.forEach(id => initTomSelect(id));
     } else {
-      showError("⚠️ Error al cargar opciones: " + json.message);
+      showToast("toast", "fail", "⚠️ Error al cargar opciones: " + json.message);
     }
   } catch (e) {
-    showError("⚠️ No se pudo conectar con el Apps Script. Verifica la URL.");
+    showToast("toast", "fail", "⚠️ No se pudo conectar con el Apps Script.");
   } finally {
     status.classList.remove("show");
   }
 }
 
-function fill(id, opts) {
+function fill(id, opts, addOtra = false) {
   const sel = document.getElementById(id);
-  if (!sel || !opts?.length) return;
+  if (!sel) return;
   const placeholder = sel.options[0];
   sel.innerHTML = "";
   sel.appendChild(placeholder);
-  opts.forEach(o => { if (o) sel.appendChild(new Option(o, o)); });
+  if (opts?.length) opts.forEach(o => { if (o) sel.appendChild(new Option(o, o)); });
+  if (addOtra) {
+    // Solo agregar si no viene ya en la lista
+    const vals = Array.from(sel.options).map(o => o.value.toLowerCase());
+    if (!vals.includes("otra")) sel.appendChild(new Option("Otra", "Otra"));
+  }
 }
 
 // ── Envío del formulario ──────────────────────────────────────────────────
@@ -475,31 +545,35 @@ document.getElementById("form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!validate()) return;
 
-  const btn = document.getElementById("btn");
+  const btn  = document.getElementById("btn");
   const spin = document.getElementById("spin");
   btn.disabled = true;
   btn.classList.add("loading");
   spin.style.display = "block";
   document.getElementById("btn-txt").textContent = "Registrando...";
 
-  const data = Object.fromEntries(new FormData(e.target).entries());
+  // Capturar datos ANTES de resetear el formulario
+  const formData = new FormData(e.target);
+
+  // Para Tom Select: obtener valor directamente del instance
+  SEARCHABLE_SELECTS.forEach(id => {
+    const fieldName = document.getElementById(id)?.name;
+    if (fieldName && tomInstances[id]) {
+      formData.set(fieldName, tomInstances[id].getValue());
+    }
+  });
+
+  const data = Object.fromEntries(formData.entries());
 
   try {
-    // no-cors: la solicitud llega al servidor pero no podemos leer la respuesta
-    // Es la forma más fiable de POST a Apps Script sin configuración CORS adicional
     await fetch(SCRIPT_URL, {
       method: "POST",
       mode:   "no-cors",
       body:   new URLSearchParams(data)
     });
-    showOk("✅ ¡Reunión registrada exitosamente! Ya aparece en el Google Sheet.");
-    e.target.reset();
-    // Re-init date pickers después de reset
-    flatpickr("#fp-agenda", { locale:"es", dateFormat:"d/m/Y", defaultDate:"today" });
-    flatpickr("#fp-reunion",{ locale:"es", dateFormat:"d/m/Y" });
+    showSummary(data);
   } catch (err) {
-    showError("❌ Error de conexión. Intenta nuevamente.");
-  } finally {
+    showToast("toast", "fail", "❌ Error de conexión. Intenta nuevamente.");
     btn.disabled = false;
     btn.classList.remove("loading");
     spin.style.display = "none";
@@ -507,28 +581,101 @@ document.getElementById("form").addEventListener("submit", async (e) => {
   }
 });
 
+// ── Mostrar resumen post-envío ────────────────────────────────────────────
+function showSummary(data) {
+  const horaLabel = data.hora
+    ? (() => {
+        // Convertir "14:30" → "14:30 PM"
+        const [h, m] = (data.hora || "").split(":").map(Number);
+        if (isNaN(h)) return data.hora;
+        const suf  = h < 12 ? "AM" : "PM";
+        const h12  = h > 12 ? h - 12 : h === 0 ? 12 : h;
+        return `${String(h12).padStart(2,"0")}:${String(m).padStart(2,"0")} ${suf}`;
+      })()
+    : "";
+
+  const fechaHora = [data.fecha_reunion, horaLabel].filter(Boolean).join(" — ");
+
+  const lineas = [
+    "🎯 *Nueva reunión agendada!!*",
+    "",
+    `🏢 ${data.empresa || "-"}`,
+    `🌎 ${data.pais || "-"}`,
+    `👤 ${data.contactos || "-"}`,
+    `💼 ${data.cargo || "-"}`,
+    `📅 ${fechaHora || "-"}`,
+  ];
+  if (data.comentario?.trim()) lineas.push(`\n💬 ${data.comentario.trim()}`);
+
+  document.getElementById("summary-box").textContent = lineas.join("\n");
+
+  // Mostrar tarjeta, ocultar form
+  document.getElementById("form").style.display       = "none";
+  document.getElementById("summary-card").style.display = "block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  // Resetear el spinner/botón para cuando se use "Registrar otra"
+  const btn  = document.getElementById("btn");
+  const spin = document.getElementById("spin");
+  btn.disabled = false;
+  btn.classList.remove("loading");
+  spin.style.display = "none";
+  document.getElementById("btn-txt").textContent = "🚀 Registrar Reunión";
+}
+
+// ── Copiar resumen ────────────────────────────────────────────────────────
+function copySummary() {
+  const text = document.getElementById("summary-box").textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => showToast("toast-copy", "ok", "✅ ¡Copiado! Pega en WhatsApp."))
+    .catch(() => showToast("toast-copy", "fail", "⚠️ No se pudo copiar automáticamente."));
+}
+
+// ── Resetear formulario ───────────────────────────────────────────────────
+function resetForm() {
+  document.getElementById("form").reset();
+  // Resetear Tom Select instances
+  SEARCHABLE_SELECTS.forEach(id => {
+    if (tomInstances[id]) tomInstances[id].setValue("");
+  });
+  // Resetear flatpickr
+  flatpickr("#fp-agenda",  { locale:"es", dateFormat:"d/m/Y", defaultDate:"today", disableMobile:true });
+  flatpickr("#fp-reunion", { locale:"es", dateFormat:"d/m/Y", disableMobile:true });
+
+  document.getElementById("summary-card").style.display = "none";
+  document.getElementById("form").style.display          = "block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 // ── Validación ────────────────────────────────────────────────────────────
 function validate() {
   let ok = true;
-  document.querySelectorAll("[required]").forEach(f => {
+  // Inputs / textareas nativos
+  document.querySelectorAll("#form [required]").forEach(f => {
     const wrap = f.closest(".field");
-    if (!f.value.trim()) { wrap?.classList.add("err"); ok = false; }
-    else                  { wrap?.classList.remove("err"); }
+    // Para selects con Tom Select: leer valor del instance
+    let val = f.value;
+    if (f.tagName === "SELECT" && tomInstances[f.id]) {
+      val = tomInstances[f.id].getValue();
+    }
+    if (!val || !String(val).trim()) {
+      wrap?.classList.add("err"); ok = false;
+    } else {
+      wrap?.classList.remove("err");
+    }
   });
-  if (!ok) showError("⚠️ Completa los campos obligatorios marcados con *");
+  if (!ok) showToast("toast", "fail", "⚠️ Completa los campos obligatorios marcados con *");
   return ok;
 }
 
-// Limpiar error al escribir
 document.addEventListener("change", e => {
   e.target.closest?.(".field")?.classList.remove("err");
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-function showOk(msg)    { toast("ok",   msg); }
-function showError(msg) { toast("fail", msg); }
-function toast(type, msg) {
-  const el = document.getElementById("toast");
+function showToast(toastId, type, msg) {
+  const el = document.getElementById(toastId);
+  if (!el) return;
   el.className = `toast ${type} show`;
   el.textContent = msg;
   el.scrollIntoView({ behavior:"smooth", block:"nearest" });
