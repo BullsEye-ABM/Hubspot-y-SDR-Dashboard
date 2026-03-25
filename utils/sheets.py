@@ -88,27 +88,55 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
 
     import io
 
-    # ── Exportar como CSV usando el nombre de la pestaña directamente ─────────
-    # El endpoint gviz/tq acepta el nombre de la pestaña sin necesitar su gid.
-    # Lee TODOS los datos crudos, ignorando cualquier filtro activo en el sheet.
-    export_url = (
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-        f"/gviz/tq?tqx=out:csv&sheet={requests.utils.quote(tab_name)}"
-    )
-    resp = requests.get(export_url, timeout=30)
+    # ── Leer datos ignorando 100% los filtros activos del equipo ─────────────
+    # MÉTODO 1: Sheets API v4 → values.get siempre devuelve TODAS las filas
+    #           sin importar qué filtros tenga el equipo aplicados en la vista.
+    # MÉTODO 2 (fallback): gviz/tq con tq=select * (fuerza lectura completa).
+    df = None
 
-    if resp.status_code != 200:
-        st.error(f"Error exportando Google Sheet (código {resp.status_code})")
-        return pd.DataFrame()
+    # — Método 1: Sheets API v4 values.get ────────────────────────────────────
+    try:
+        range_name = requests.utils.quote(f"'{tab_name}'", safe="'")
+        v4_url = (
+            f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
+            f"/values/{range_name}"
+        )
+        v4_resp = requests.get(
+            v4_url,
+            params={"key": api_key, "valueRenderOption": "FORMATTED_VALUE"},
+            timeout=30,
+        )
+        if v4_resp.status_code == 200:
+            payload = v4_resp.json()
+            rows = payload.get("values", [])
+            if len(rows) >= 2:
+                headers = rows[0]
+                # Alinear filas más cortas que el encabezado
+                data_rows = [
+                    r + [""] * (len(headers) - len(r)) for r in rows[1:]
+                ]
+                df = pd.DataFrame(data_rows, columns=headers).fillna("")
+    except Exception:
+        pass  # sigue al fallback
 
-    if not resp.text.strip():
-        st.warning("El Google Sheet está vacío.")
-        return pd.DataFrame()
+    # — Método 2 (fallback): gviz/tq forzando SELECT * ─────────────────────
+    if df is None or df.empty:
+        tq_url = (
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+            f"/gviz/tq?tqx=out:csv"
+            f"&tq={requests.utils.quote('select *')}"
+            f"&sheet={requests.utils.quote(tab_name)}"
+        )
+        tq_resp = requests.get(tq_url, timeout=30)
+        if tq_resp.status_code != 200:
+            st.error(f"Error exportando Google Sheet (código {tq_resp.status_code})")
+            return pd.DataFrame()
+        if not tq_resp.text.strip():
+            st.warning("El Google Sheet está vacío.")
+            return pd.DataFrame()
+        df = pd.read_csv(io.StringIO(tq_resp.text), dtype=str).fillna("")
 
-    # Leer CSV con pandas — todos los datos sin importar filtros activos
-    df = pd.read_csv(io.StringIO(resp.text), dtype=str).fillna("")
-
-    if df.empty:
+    if df is None or df.empty:
         st.warning("El Google Sheet no tiene datos.")
         return pd.DataFrame()
 
