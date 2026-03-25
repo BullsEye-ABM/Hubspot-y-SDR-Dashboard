@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BullsEye — Nueva Reunión</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  <style>
+    /* ── Variables ─────────────────────────────────────────────────────── */
+    :root {
+      --bg:          #080a1c;
+      --bg-card:     rgba(255,255,255,0.035);
+      --bg-input:    rgba(255,255,255,0.055);
+      --accent:      #00d4ff;
+      --accent-dim:  rgba(0,212,255,0.15);
+      --text:        #f0f2ff;
+      --muted:       rgba(240,242,255,0.45);
+      --border:      rgba(0,212,255,0.13);
+      --border-focus:rgba(0,212,255,0.55);
+      --success:     #00c9a7;
+      --error:       #ff6b6b;
+      --navy:        #1a1b4d;
+      --radius:      12px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 48px 20px 100px;
+      /* Subtle radial glow */
+      background-image:
+        radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,212,255,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 100% 80%, rgba(26,27,77,0.6) 0%, transparent 60%);
+    }
+
+    /* ── Layout ──────────────────────────────────────────────────────────── */
+    .container { max-width: 740px; margin: 0 auto; }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    .header { text-align: center; margin-bottom: 44px; }
+
+    .logo {
+      display: inline-flex; align-items: center; gap: 14px; margin-bottom: 28px;
+      text-decoration: none;
+    }
+    .logo-mark {
+      width: 48px; height: 48px; background: var(--accent);
+      border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; font-size: 22px;
+      box-shadow: 0 0 24px rgba(0,212,255,0.35);
+    }
+    .logo-name { font-size: 24px; font-weight: 700; letter-spacing: .4px; color: #fff; }
+    .logo-name span { color: var(--accent); }
+
+    .header h1 { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+    .header p  { color: var(--muted); font-size: 14px; }
+
+    /* ── Card ────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px 32px;
+      margin-bottom: 18px;
+      backdrop-filter: blur(12px);
+    }
+
+    .card-title {
+      font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1.2px; color: var(--accent);
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 22px;
+    }
+    .card-title::after { content:''; flex:1; height:1px; background: var(--border); }
+
+    /* ── Grid ────────────────────────────────────────────────────────────── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .full   { grid-column: 1 / -1; }
+    @media (max-width: 580px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+
+    /* ── Field ───────────────────────────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+
+    .field label {
+      font-size: 12.5px; font-weight: 500; color: rgba(240,242,255,.7);
+    }
+    .req { color: var(--accent); margin-left: 2px; }
+
+    .field input,
+    .field select,
+    .field textarea {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color .18s, box-shadow .18s;
+      width: 100%;
+    }
+    .field select {
+      appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7'%3E%3Cpath fill='%2300d4ff' d='M5 7 0 0h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 13px center;
+      padding-right: 34px;
+      cursor: pointer;
+    }
+    .field select option { background: #1a1b4d; color: #fff; }
+    .field textarea { resize: vertical; min-height: 96px; }
+    .field input::placeholder, .field textarea::placeholder { color: var(--muted); }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(0,212,255,.09);
+    }
+
+    /* Field error state */
+    .field.err input, .field.err select { border-color: var(--error); }
+    .field-err { font-size: 11.5px; color: var(--error); display: none; }
+    .field.err .field-err { display: block; }
+
+    /* ── Radio pill group ─────────────────────────────────────────────────── */
+    .pill-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pill input[type="radio"] { display: none; }
+    .pill label {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 8px 16px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      cursor: pointer; font-size: 13px; font-weight: 500;
+      transition: all .15s; user-select: none;
+    }
+    .pill input[type="radio"]:checked + label {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── Submit ───────────────────────────────────────────────────────────── */
+    .submit-wrap { margin-top: 6px; }
+
+    .btn {
+      width: 100%; padding: 15px;
+      background: linear-gradient(135deg, #00d4ff 0%, #0095cc 100%);
+      color: #06071a; border: none; border-radius: var(--radius);
+      font-family: inherit; font-size: 15px; font-weight: 700;
+      cursor: pointer; letter-spacing: .3px;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(0,212,255,.3); }
+    .btn:active { transform: translateY(0); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* Spinner */
+    .spin {
+      width: 17px; height: 17px; border-radius: 50%;
+      border: 2.5px solid rgba(6,7,26,.25); border-top-color: #06071a;
+      animation: spin .65s linear infinite; display: none;
+    }
+    .loading .spin { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Status toast ─────────────────────────────────────────────────────── */
+    .toast {
+      display: none; margin-top: 16px; padding: 14px 18px;
+      border-radius: var(--radius); font-size: 14px; font-weight: 500;
+      align-items: center; gap: 10px;
+    }
+    .toast.show   { display: flex; }
+    .toast.ok     { background: rgba(0,201,167,.1);  border:1px solid rgba(0,201,167,.3);  color: #00c9a7; }
+    .toast.fail   { background: rgba(255,107,107,.1); border:1px solid rgba(255,107,107,.3); color: #ff6b6b; }
+
+    /* ── Loading overlay for dropdown fetch ───────────────────────────────── */
+    .fetch-status {
+      text-align: center; padding: 12px;
+      font-size: 13px; color: var(--muted);
+      display: none;
+    }
+    .fetch-status.show { display: block; }
+
+    /* ── flatpickr dark theme override ───────────────────────────────────── */
+    .flatpickr-calendar {
+      background: #1a1b4d !important;
+      border: 1px solid var(--border) !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5) !important;
+    }
+    .flatpickr-day { color: var(--text) !important; }
+    .flatpickr-day.selected, .flatpickr-day.selected:hover {
+      background: var(--accent) !important;
+      border-color: var(--accent) !important;
+      color: #06071a !important;
+    }
+    .flatpickr-day:hover { background: var(--accent-dim) !important; }
+    .flatpickr-months .flatpickr-month,
+    .flatpickr-weekdays,
+    span.flatpickr-weekday { background: #1a1b4d !important; color: var(--text) !important; }
+    .flatpickr-current-month, .flatpickr-current-month .numInputWrapper input,
+    .flatpickr-current-month select { color: var(--text) !important; }
+    .flatpickr-day.flatpickr-disabled, .flatpickr-day.flatpickr-disabled:hover { color: var(--muted) !important; }
+    .numInput, .cur-year { color: var(--text) !important; }
+    .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: var(--accent) !important; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-mark">🎯</div>
+      <div class="logo-name">Bulls<span>Eye</span></div>
+    </div>
+    <h1>Registrar Nueva Reunión</h1>
+    <p>Completa todos los campos para registrar la reunión agendada en el sistema</p>
+  </div>
+
+  <div class="fetch-status" id="fetch-status">⏳ Cargando opciones desde el sistema...</div>
+
+  <form id="form" novalidate>
+
+    <!-- ── Sección 1: Reunión ─────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">📋 Información de la reunión</div>
+      <div class="grid-2">
+
+        <div class="field">
+          <label>Cliente <span class="req">*</span></label>
+          <select name="cliente" id="s-cliente" required>
+            <option value="">Selecciona un cliente...</option>
+          </select>
+          <span class="field-err">Requerido</span>
+        </div>
+
+        <div class="field">
+          <label>Origen <span class="req">*</span></label>
+          <select name="origen" id="s-origen" required>
+            <option value="">Selecciona el origen...</option>
+          </select>
+          <span class="field-err">Requerido</span>
+        </div>
+
+        <div class="field full">
+          <label>Responsable de la Reunión (SDR) <span class="req">*</span></label>
+          <select name="responsable" id="s-sdr" required>
+            <option value="">Selecciona el responsable...</option>
+          </select>
+          <span class="field-err">Requerido</span>
+        </div>
+
+        <div class="field">
+          <label>Fecha de Agendamiento <span class="req">*</span></label>
+          <input type="text" name="fecha_agendamiento" id="fp-agenda"
+                 placeholder="DD/MM/AAAA" readonly required />
+          <span class="field-err">Requerido</span>
+        </div>
+
+        <div class="field">
+          <label>Fecha de la Reunión <span class="req">*</span></label>
+          <input type="text" name="fecha_reunion" id="fp-reunion"
+                 placeholder="DD/MM/AAAA" readonly required />
+          <span class="field-err">Requerido</span>
+        </div>
+
+        <div class="field">
+          <label>Hora de la Reunión</label>
+          <select name="hora" id="s-hora">
+            <option value="">Sin especificar</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Realizado <span class="req">*</span></label>
+          <select name="realizado" required>
+            <option value="">Selecciona...</option>
+            <option value="Pendiente">⏳ Pendiente</option>
+            <option value="Si">✅ Sí (realizada)</option>
+            <option value="No">❌ No</option>
+            <option value="Reagendar">🔄 Reagendar</option>
+          </select>
+          <span class="field-err">Requerido</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Sección 2: Empresa y Contacto ──────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">🏢 Empresa y contacto</div>
+      <div class="grid-2">
+
+        <div class="field">
+          <label>Empresa <span class="req">*</span></label>
+          <input type="text" name="empresa" placeholder="Nombre de la empresa" required />
+          <span class="field-err">Requerido</span>
+        </div>
+
+        <div class="field">
+          <label>Contacto / Nombre</label>
+          <input type="text" name="contactos" placeholder="Nombre del contacto" />
+        </div>
+
+        <div class="field">
+          <label>Correo electrónico</label>
+          <input type="email" name="correo" placeholder="contacto@empresa.com" />
+        </div>
+
+        <div class="field">
+          <label>Teléfono</label>
+          <input type="tel" name="telefono" placeholder="+56 9 1234 5678" />
+        </div>
+
+        <div class="field">
+          <label>Cargo</label>
+          <input type="text" name="cargo" placeholder="Ej: Gerente de Tecnología" />
+        </div>
+
+        <div class="field">
+          <label>País <span class="req">*</span></label>
+          <select name="pais" id="s-pais" required>
+            <option value="">Selecciona el país...</option>
+          </select>
+          <span class="field-err">Requerido</span>
+        </div>
+
+        <div class="field full">
+          <label>Industria</label>
+          <select name="industria" id="s-industria">
+            <option value="">Selecciona la industria...</option>
+          </select>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Sección 3: Seguimiento ──────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">📊 Seguimiento</div>
+      <div class="grid-2">
+
+        <div class="field full">
+          <label>Propuesta / Oportunidad</label>
+          <div class="pill-group">
+            <div class="pill">
+              <input type="radio" name="propuesta" id="prop-no" value="No" checked />
+              <label for="prop-no">❌ No</label>
+            </div>
+            <div class="pill">
+              <input type="radio" name="propuesta" id="prop-si" value="Si" />
+              <label for="prop-si">✅ Sí</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="field full">
+          <label>Sales Manager</label>
+          <input type="text" name="sales_manager" placeholder="Nombre del Sales Manager" />
+        </div>
+
+        <div class="field full">
+          <label>Comentario de la Reunión</label>
+          <textarea name="comentario"
+            placeholder="Detalles relevantes de la reunión, próximos pasos, acuerdos...">
+          </textarea>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Submit ─────────────────────────────────────────────────────────── -->
+    <div class="submit-wrap">
+      <button type="submit" class="btn" id="btn">
+        <span class="spin" id="spin"></span>
+        <span id="btn-txt">🚀 Registrar Reunión</span>
+      </button>
+      <div class="toast" id="toast"></div>
+    </div>
+
+  </form>
+</div>
+
+<!-- ── Scripts ────────────────────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  CONFIGURACIÓN — Pega aquí la URL de tu Google Apps Script desplegado
+// ════════════════════════════════════════════════════════════════════════════
+const SCRIPT_URL = "REEMPLAZAR_CON_URL_DEL_APPS_SCRIPT";
+// Ejemplo: "https://script.google.com/macros/s/AKfy.../exec"
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Inicializar al cargar ─────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  initDatePickers();
+  initTimePicker();
+  if (SCRIPT_URL.startsWith("REEMPLAZAR")) {
+    showError("⚙️ Configura la URL del Apps Script en el archivo HTML (línea SCRIPT_URL)");
+    document.getElementById("btn").disabled = true;
+  } else {
+    loadDropdowns();
+  }
+});
+
+// ── Date pickers ─────────────────────────────────────────────────────────
+function initDatePickers() {
+  const base = { locale: "es", dateFormat: "d/m/Y", disableMobile: true };
+  flatpickr("#fp-agenda", { ...base, defaultDate: "today" });
+  flatpickr("#fp-reunion", base);
+}
+
+// ── Time picker (7:00 AM → 10:00 PM en intervalos de 30 min) ─────────────
+function initTimePicker() {
+  const sel = document.getElementById("s-hora");
+  for (let h = 7; h <= 22; h++) {
+    for (let m of [0, 30]) {
+      const hh   = String(h).padStart(2,"0");
+      const mm   = String(m).padStart(2,"0");
+      const suf  = h < 12 ? "AM" : "PM";
+      const h12  = h > 12 ? h - 12 : h === 0 ? 12 : h;
+      const lbl  = `${String(h12).padStart(2,"0")}:${mm} ${suf}`;
+      sel.appendChild(new Option(lbl, `${hh}:${mm}`));
+    }
+  }
+}
+
+// ── Cargar dropdowns desde Apps Script ───────────────────────────────────
+async function loadDropdowns() {
+  const status = document.getElementById("fetch-status");
+  status.classList.add("show");
+  try {
+    const res  = await fetch(SCRIPT_URL);
+    const json = await res.json();
+    if (json.status === "ok") {
+      fill("s-cliente",  json.data.clientes);
+      fill("s-sdr",      json.data.sdrs);
+      fill("s-origen",   json.data.origenes);
+      fill("s-pais",     json.data.paises);
+      fill("s-industria",json.data.industrias);
+    } else {
+      showError("⚠️ Error al cargar opciones: " + json.message);
+    }
+  } catch (e) {
+    showError("⚠️ No se pudo conectar con el Apps Script. Verifica la URL.");
+  } finally {
+    status.classList.remove("show");
+  }
+}
+
+function fill(id, opts) {
+  const sel = document.getElementById(id);
+  if (!sel || !opts?.length) return;
+  const placeholder = sel.options[0];
+  sel.innerHTML = "";
+  sel.appendChild(placeholder);
+  opts.forEach(o => { if (o) sel.appendChild(new Option(o, o)); });
+}
+
+// ── Envío del formulario ──────────────────────────────────────────────────
+document.getElementById("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!validate()) return;
+
+  const btn = document.getElementById("btn");
+  const spin = document.getElementById("spin");
+  btn.disabled = true;
+  btn.classList.add("loading");
+  spin.style.display = "block";
+  document.getElementById("btn-txt").textContent = "Registrando...";
+
+  const data = Object.fromEntries(new FormData(e.target).entries());
+
+  try {
+    // no-cors: la solicitud llega al servidor pero no podemos leer la respuesta
+    // Es la forma más fiable de POST a Apps Script sin configuración CORS adicional
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      mode:   "no-cors",
+      body:   new URLSearchParams(data)
+    });
+    showOk("✅ ¡Reunión registrada exitosamente! Ya aparece en el Google Sheet.");
+    e.target.reset();
+    // Re-init date pickers después de reset
+    flatpickr("#fp-agenda", { locale:"es", dateFormat:"d/m/Y", defaultDate:"today" });
+    flatpickr("#fp-reunion",{ locale:"es", dateFormat:"d/m/Y" });
+  } catch (err) {
+    showError("❌ Error de conexión. Intenta nuevamente.");
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("loading");
+    spin.style.display = "none";
+    document.getElementById("btn-txt").textContent = "🚀 Registrar Reunión";
+  }
+});
+
+// ── Validación ────────────────────────────────────────────────────────────
+function validate() {
+  let ok = true;
+  document.querySelectorAll("[required]").forEach(f => {
+    const wrap = f.closest(".field");
+    if (!f.value.trim()) { wrap?.classList.add("err"); ok = false; }
+    else                  { wrap?.classList.remove("err"); }
+  });
+  if (!ok) showError("⚠️ Completa los campos obligatorios marcados con *");
+  return ok;
+}
+
+// Limpiar error al escribir
+document.addEventListener("change", e => {
+  e.target.closest?.(".field")?.classList.remove("err");
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function showOk(msg)    { toast("ok",   msg); }
+function showError(msg) { toast("fail", msg); }
+function toast(type, msg) {
+  const el = document.getElementById("toast");
+  el.className = `toast ${type} show`;
+  el.textContent = msg;
+  el.scrollIntoView({ behavior:"smooth", block:"nearest" });
+}
+</script>
+</body>
+</html>
