@@ -49,6 +49,80 @@ COLUMN_MAP = {
 }
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_maestra_activos(_secrets) -> dict:
+    """
+    Lee la pestaña 'Maestra IA' y retorna clientes y SDRs activos.
+    Retorna: {"clientes": [...], "sdrs": [...]}
+    """
+    try:
+        sheet_id = _secrets["google_sheets"]["sheet_id"]
+        api_key  = _secrets["google_sheets"]["api_key"]
+    except KeyError:
+        return {"clientes": [], "sdrs": []}
+
+    tab_name   = "Maestra IA"
+    range_name = requests.utils.quote(tab_name)
+    url = (
+        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
+        f"/values/{range_name}"
+    )
+
+    try:
+        resp = requests.get(
+            url,
+            params={"key": api_key, "valueRenderOption": "FORMATTED_VALUE"},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return {"clientes": [], "sdrs": []}
+        rows = resp.json().get("values", [])
+    except Exception:
+        return {"clientes": [], "sdrs": []}
+
+    if len(rows) < 2:
+        return {"clientes": [], "sdrs": []}
+
+    headers = [h.strip() for h in rows[0]]
+
+    def find_col(keyword, exclude=None, after=-1):
+        for i, h in enumerate(headers):
+            hl = h.lower()
+            if i <= after:
+                continue
+            if keyword.lower() in hl and (not exclude or exclude.lower() not in hl):
+                return i
+        return -1
+
+    col_cliente       = find_col("cliente",     exclude="status")
+    col_st_cliente    = find_col("status",      exclude="responsable")
+    col_responsable   = find_col("responsable", exclude="status")
+    col_st_responsable = find_col("status",     after=col_responsable)
+
+    def cell(row, col):
+        if col < 0 or col >= len(row):
+            return ""
+        return str(row[col]).strip()
+
+    clientes, sdrs = [], []
+    seen_c, seen_s = set(), set()
+
+    for row in rows[1:]:
+        c  = cell(row, col_cliente)
+        sc = cell(row, col_st_cliente).lower()
+        if c and sc == "activo" and c not in seen_c:
+            clientes.append(c)
+            seen_c.add(c)
+
+        s  = cell(row, col_responsable)
+        ss = cell(row, col_st_responsable).lower()
+        if s and ss == "activo" and s not in seen_s:
+            sdrs.append(s)
+            seen_s.add(s)
+
+    return {"clientes": sorted(clientes), "sdrs": sorted(sdrs)}
+
+
 def _normalizar(texto: str) -> str:
     """Minúsculas + sin tildes para comparación flexible."""
     return unicodedata.normalize("NFD", texto).encode("ascii", "ignore").decode().lower().strip()

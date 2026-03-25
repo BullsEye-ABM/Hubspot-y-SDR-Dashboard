@@ -4,6 +4,7 @@ Sheet: "Metas equipo BullsEye / reuniones / oportunidades"
 Pestaña: "Gestión Reuniones"
 """
 
+import calendar
 import json
 import os
 from datetime import date, timedelta
@@ -13,14 +14,19 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils.sheets import get_meetings_from_sheets
+from utils.sheets import get_meetings_from_sheets, get_maestra_activos
 
 st.set_page_config(page_title="Reuniones SDR", page_icon="📅", layout="wide")
 
+# ── Constantes de metas ────────────────────────────────────────────────────────
+_GOALS_YEAR   = 2026
+_MONTH_KEYS   = [f"{_GOALS_YEAR}-{m:02d}" for m in range(1, 13)]
+_MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
 # ── Rutas ──────────────────────────────────────────────────────────────────────
-_HERE = os.path.dirname(os.path.abspath(__file__))
+_HERE        = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(_HERE)
-GOALS_FILE = os.path.join(PROJECT_ROOT, "data", "goals.json")
+GOALS_FILE   = os.path.join(PROJECT_ROOT, "data", "goals.json")
 os.makedirs(os.path.join(PROJECT_ROOT, "data"), exist_ok=True)
 
 
@@ -80,7 +86,6 @@ with st.expander("🔧 Diagnóstico técnico", expanded=False):
 today = date.today()
 
 # ── Estado de cada reunión — directo desde columna "Realizado" (col J) ────────
-# Valores posibles en el sheet: Si, Pendiente, No, Reagendar
 _ESTADO_MAP = {
     "si":        "Realizada",
     "sí":        "Realizada",
@@ -89,9 +94,11 @@ _ESTADO_MAP = {
     "reagendar": "Reagendar",
 }
 
+
 def calcular_estado(row) -> str:
     val = str(row.get("realizado", "")).strip().lower()
     return _ESTADO_MAP.get(val, "No realizada")
+
 
 df_raw["estado"] = df_raw.apply(calcular_estado, axis=1)
 
@@ -109,7 +116,7 @@ def get_period_dates(preset: str):
         return date(t.year, t.month, 1), t
     elif preset == "Mes pasado":
         first = date(t.year, t.month, 1)
-        last = first - timedelta(days=1)
+        last  = first - timedelta(days=1)
         return date(last.year, last.month, 1), last
     elif preset == "Últimos 3 meses":
         return t - timedelta(days=90), t
@@ -122,7 +129,7 @@ def get_period_dates(preset: str):
     elif preset == "Últimos 12 meses":
         return t - timedelta(days=365), t
     else:  # Todo
-        col = df_raw["fecha_agendamiento"] if "fecha_agendamiento" in df_raw.columns else df_raw.get("fecha")
+        col   = df_raw["fecha_agendamiento"] if "fecha_agendamiento" in df_raw.columns else df_raw.get("fecha")
         min_d = col.dropna().min()
         return (min_d.date() if pd.notna(min_d) else date(2023, 1, 1)), t
 
@@ -152,7 +159,7 @@ with st.sidebar:
     preset = st.selectbox("Período", preset_opts, index=0)
 
     if preset == "Personalizado":
-        ref_col = df_raw[fecha_col] if fecha_col in df_raw.columns else df_raw.get("fecha")
+        ref_col   = df_raw[fecha_col] if fecha_col in df_raw.columns else df_raw.get("fecha")
         min_avail = ref_col.dropna().min()
         min_avail = min_avail.date() if pd.notna(min_avail) else date(2023, 1, 1)
         dr = st.date_input("Rango de fechas", value=(min_avail, today),
@@ -195,10 +202,8 @@ with st.sidebar:
 # ── Aplicar filtros ────────────────────────────────────────────────────────────
 df = df_raw.copy()
 
-# Para el filtro de período: si la columna elegida (ej. fecha_reunion) está vacía
-# en alguna fila, usamos fecha_agendamiento como respaldo para no perder esa fila.
 if fecha_col in df.columns:
-    fallback = df["fecha_agendamiento"] if "fecha_agendamiento" in df.columns else pd.Series(dtype="datetime64[ns]")
+    fallback      = df["fecha_agendamiento"] if "fecha_agendamiento" in df.columns else pd.Series(dtype="datetime64[ns]")
     fecha_efectiva = df[fecha_col].fillna(fallback)
 else:
     fecha_efectiva = df.get("fecha", pd.Series(dtype="datetime64[ns]"))
@@ -206,23 +211,14 @@ else:
 df = df[fecha_efectiva.notna()]
 df = df[(fecha_efectiva[df.index].dt.date >= start_date) & (fecha_efectiva[df.index].dt.date <= end_date)]
 
-if sel_sdr != "Todos" and "sdr" in df.columns:
-    df = df[df["sdr"] == sel_sdr]
-if sel_client != "Todos" and "cliente" in df.columns:
-    df = df[df["cliente"] == sel_client]
-if sel_pais != "Todos" and "pais" in df.columns:
-    df = df[df["pais"] == sel_pais]
-if sel_estado:
-    df = df[df["estado"].isin(sel_estado)]
+if sel_sdr    != "Todos" and "sdr"     in df.columns: df = df[df["sdr"]     == sel_sdr]
+if sel_client != "Todos" and "cliente" in df.columns: df = df[df["cliente"] == sel_client]
+if sel_pais   != "Todos" and "pais"    in df.columns: df = df[df["pais"]    == sel_pais]
+if sel_estado:                                         df = df[df["estado"].isin(sel_estado)]
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Helpers base ───────────────────────────────────────────────────────────────
 def _agg_by(source_df: pd.DataFrame, group_col: str, extra_fn=None) -> pd.DataFrame:
-    """
-    Agrupa source_df por group_col y aplica resumen() a cada grupo.
-    Compatible con cualquier versión de pandas (evita reset_index conflict en 2.2+).
-    extra_fn(group) → dict, si se quiere agregar campos extra por grupo.
-    """
     rows = []
     for key, group in source_df.groupby(group_col):
         row = resumen(group).to_dict()
@@ -233,23 +229,22 @@ def _agg_by(source_df: pd.DataFrame, group_col: str, extra_fn=None) -> pd.DataFr
     if not rows:
         return pd.DataFrame()
     result = pd.DataFrame(rows)
-    # Poner group_col como primera columna
     cols = [group_col] + [c for c in result.columns if c != group_col]
     return result[cols]
 
 
 def resumen(g: pd.DataFrame) -> pd.Series:
-    total = len(g)
+    total     = len(g)
     realizadas = (g["estado"] == "Realizada").sum()
     pendientes = (g["estado"] == "Pendiente").sum()
-    no_real = (g["estado"] == "No realizada").sum()
+    no_real    = (g["estado"] == "No realizada").sum()
     propuestas = 0
     if "propuesta" in g.columns:
         propuestas = g["propuesta"].replace({"": pd.NA, "nan": pd.NA}).notna().sum()
     return pd.Series({
-        "Agendadas": total,
-        "Realizadas": int(realizadas),
-        "Pendientes": int(pendientes),
+        "Agendadas":     total,
+        "Realizadas":    int(realizadas),
+        "Pendientes":    int(pendientes),
         "No realizadas": int(no_real),
         "Con propuesta": int(propuestas),
     })
@@ -265,28 +260,104 @@ def add_tasa(df_t: pd.DataFrame) -> pd.DataFrame:
     return df_t
 
 
-def add_cumplimiento(df_t: pd.DataFrame, key_col: str, goals_dict: dict, months: int) -> pd.DataFrame:
+# ── Helpers de metas ───────────────────────────────────────────────────────────
+def get_months_in_period(start: date, end: date) -> list:
+    """Lista de 'YYYY-MM' para todos los meses que toca el período."""
+    months = []
+    y, m = start.year, start.month
+    while (y, m) <= (end.year, end.month):
+        months.append(f"{y}-{m:02d}")
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return months
+
+
+def get_meta_periodo(name: str, goals_dict: dict, months: list) -> int:
+    entity = goals_dict.get(name, {})
+    if isinstance(entity, dict):
+        return sum(int(entity.get(mo, 0)) for mo in months)
+    # Formato antiguo (single int)
+    return int(entity) * len(months) if entity else 0
+
+
+def calculate_ideal_pct(start: date, end: date, hoy: date) -> float:
+    """% del período que debería estar cumplido a día de hoy."""
+    if hoy <= start:
+        return 0.0
+    if hoy >= end:
+        return 100.0
+    total   = (end - start).days
+    elapsed = (hoy - start).days
+    return round(elapsed / total * 100, 1) if total > 0 else 100.0
+
+
+def add_cumplimiento(df_t: pd.DataFrame, key_col: str, goals_dict: dict,
+                     months: list, ideal_pct: float) -> pd.DataFrame:
     df_t = df_t.copy()
-    df_t["Meta mensual"] = df_t[key_col].map(goals_dict).fillna(0).astype(int)
-    df_t["Meta período"] = df_t["Meta mensual"] * months
-    df_t["% Cumplimiento"] = df_t.apply(
+
+    df_t["Meta período"] = df_t[key_col].apply(
+        lambda n: get_meta_periodo(n, goals_dict, months)
+    )
+    df_t["% Agendadas"] = df_t.apply(
         lambda r: f"{round(r['Agendadas'] / r['Meta período'] * 100, 1)}%"
-        if r["Meta período"] > 0 else "—",
-        axis=1,
+        if r["Meta período"] > 0 else "—", axis=1,
+    )
+    df_t["% Realizadas"] = df_t.apply(
+        lambda r: f"{round(r['Realizadas'] / r['Meta período'] * 100, 1)}%"
+        if r["Meta período"] > 0 else "—", axis=1,
+    )
+    df_t["% Ideal hoy"] = df_t["Meta período"].apply(
+        lambda m: f"{ideal_pct}%" if m > 0 else "—"
     )
     return df_t
 
 
-goals = load_goals()
-months_count = max(1, round((end_date - start_date).days / 30))
+def build_meta_df(entities: list, goals_dict: dict) -> pd.DataFrame:
+    """DataFrame editable con filas=entidades, columnas=meses."""
+    rows = []
+    for e in entities:
+        eg = goals_dict.get(e, {})
+        if not isinstance(eg, dict):
+            eg = {}
+        row = {"Nombre": e}
+        for key, label in zip(_MONTH_KEYS, _MONTH_LABELS):
+            row[label] = int(eg.get(key, 0))
+        rows.append(row)
+    if not rows:
+        row = {"Nombre": "—"}
+        for label in _MONTH_LABELS:
+            row[label] = 0
+        rows = [row]
+    return pd.DataFrame(rows)
+
+
+def extract_goals_from_df(edited_df: pd.DataFrame) -> dict:
+    result = {}
+    for _, row in edited_df.iterrows():
+        name = str(row["Nombre"]).strip()
+        if not name or name == "—":
+            continue
+        result[name] = {
+            key: int(row.get(label, 0))
+            for key, label in zip(_MONTH_KEYS, _MONTH_LABELS)
+        }
+    return result
+
+
+# ── Cargar metas y calcular período ───────────────────────────────────────────
+goals           = load_goals()
+months_in_period = get_months_in_period(start_date, end_date)
+ideal_pct       = calculate_ideal_pct(start_date, end_date, today)
 
 # ── KPIs ───────────────────────────────────────────────────────────────────────
-total = len(df)
+total            = len(df)
 realizadas_total = (df["estado"] == "Realizada").sum()
 pendientes_total = (df["estado"] == "Pendiente").sum()
-no_real_total = (df["estado"] == "No realizada").sum()
-tasa_total = round(realizadas_total / total * 100, 1) if total > 0 else 0
-prop_total = 0
+no_real_total    = (df["estado"] == "No realizada").sum()
+tasa_total       = round(realizadas_total / total * 100, 1) if total > 0 else 0
+prop_total       = 0
 if "propuesta" in df.columns:
     prop_total = df["propuesta"].replace({"": pd.NA, "nan": pd.NA}).notna().sum()
 
@@ -296,12 +367,12 @@ st.caption(f"Período: **{periodo_str}** · {total:,} reuniones con los filtros 
 st.divider()
 
 c1, c2, c3, c4, c5, c6 = st.columns(6)
-c1.metric("📋 Agendadas", f"{total:,}")
-c2.metric("✅ Realizadas", f"{realizadas_total:,}")
-c3.metric("⏳ Pendientes", f"{pendientes_total:,}")
-c4.metric("❌ No realizadas", f"{no_real_total:,}")
+c1.metric("📋 Agendadas",       f"{total:,}")
+c2.metric("✅ Realizadas",       f"{realizadas_total:,}")
+c3.metric("⏳ Pendientes",       f"{pendientes_total:,}")
+c4.metric("❌ No realizadas",    f"{no_real_total:,}")
 c5.metric("📈 Tasa realización", f"{tasa_total}%")
-c6.metric("📄 Con propuesta", f"{prop_total:,}")
+c6.metric("📄 Con propuesta",    f"{prop_total:,}")
 st.divider()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
@@ -326,12 +397,11 @@ with tab_periodo:
         )
         monthly = add_tasa(monthly)
 
-        # Gráfico
         fig = go.Figure()
-        fig.add_bar(x=monthly["Mes"], y=monthly["Agendadas"],   name="Agendadas",    marker_color="#a8dadc")
-        fig.add_bar(x=monthly["Mes"], y=monthly["Realizadas"],  name="Realizadas",   marker_color="#457b9d")
-        fig.add_bar(x=monthly["Mes"], y=monthly["Pendientes"],  name="Pendientes",   marker_color="#f4a261")
-        fig.add_bar(x=monthly["Mes"], y=monthly["No realizadas"], name="No realizadas", marker_color="#e63946")
+        fig.add_bar(x=monthly["Mes"], y=monthly["Agendadas"],    name="Agendadas",    marker_color="#a8dadc")
+        fig.add_bar(x=monthly["Mes"], y=monthly["Realizadas"],   name="Realizadas",   marker_color="#457b9d")
+        fig.add_bar(x=monthly["Mes"], y=monthly["Pendientes"],   name="Pendientes",   marker_color="#f4a261")
+        fig.add_bar(x=monthly["Mes"], y=monthly["No realizadas"],name="No realizadas",marker_color="#e63946")
         fig.update_layout(
             barmode="group", height=380,
             xaxis_title="Mes", yaxis_title="Reuniones",
@@ -339,18 +409,16 @@ with tab_periodo:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # Tabla
         st.dataframe(
             monthly,
-            use_container_width=True,
-            hide_index=True,
+            use_container_width=True, hide_index=True,
             column_config={
-                "Mes":            st.column_config.TextColumn("Mes"),
-                "Agendadas":      st.column_config.NumberColumn("Agendadas", format="%d"),
-                "Realizadas":     st.column_config.NumberColumn("Realizadas", format="%d"),
-                "Pendientes":     st.column_config.NumberColumn("Pendientes", format="%d"),
-                "No realizadas":  st.column_config.NumberColumn("No realizadas", format="%d"),
-                "Con propuesta":  st.column_config.NumberColumn("Con propuesta", format="%d"),
+                "Mes":              st.column_config.TextColumn("Mes"),
+                "Agendadas":        st.column_config.NumberColumn("Agendadas",    format="%d"),
+                "Realizadas":       st.column_config.NumberColumn("Realizadas",   format="%d"),
+                "Pendientes":       st.column_config.NumberColumn("Pendientes",   format="%d"),
+                "No realizadas":    st.column_config.NumberColumn("No realizadas",format="%d"),
+                "Con propuesta":    st.column_config.NumberColumn("Con propuesta",format="%d"),
                 "Tasa realización": st.column_config.TextColumn("Tasa realización"),
             },
         )
@@ -367,12 +435,9 @@ with tab_sdr:
     if "sdr" not in df.columns:
         st.warning("No se encontró la columna de SDR/Responsable.")
     else:
-        sdr_df = (
-            _agg_by(df, "sdr")
-            .rename(columns={"sdr": "SDR"})
-        )
+        sdr_df = _agg_by(df, "sdr").rename(columns={"sdr": "SDR"})
         sdr_df = add_tasa(sdr_df)
-        sdr_df = add_cumplimiento(sdr_df, "SDR", goals.get("sdr", {}), months_count)
+        sdr_df = add_cumplimiento(sdr_df, "SDR", goals.get("sdr", {}), months_in_period, ideal_pct)
         sdr_df = sdr_df.sort_values("Agendadas", ascending=False)
 
         # Gráfico
@@ -395,9 +460,16 @@ with tab_sdr:
 
         display_cols = ["SDR", "Agendadas", "Realizadas", "Pendientes", "No realizadas", "Con propuesta", "Tasa realización"]
         if sdr_df["Meta período"].sum() > 0:
-            display_cols += ["Meta período", "% Cumplimiento"]
+            display_cols += ["Meta período", "% Agendadas", "% Realizadas", "% Ideal hoy"]
 
-        st.dataframe(sdr_df[display_cols], use_container_width=True, hide_index=True)
+        st.dataframe(sdr_df[display_cols], use_container_width=True, hide_index=True,
+                     column_config={
+                         "% Ideal hoy": st.column_config.TextColumn(
+                             "% Ideal hoy",
+                             help=f"Porcentaje que debería estar cumplido a hoy ({today.strftime('%d/%m/%Y')}) "
+                                  f"según el avance del período ({ideal_pct}%)"
+                         )
+                     })
 
         # Desglose mensual
         with st.expander("📆 Ver desglose mensual por SDR"):
@@ -405,8 +477,8 @@ with tab_sdr:
             if mes_col2 in df.columns:
                 rows_sm = []
                 for (mes, sdr), g in df.groupby([mes_col2, "sdr"]):
-                    ag = len(g)
-                    re = (g["estado"] == "Realizada").sum()
+                    ag   = len(g)
+                    re   = (g["estado"] == "Realizada").sum()
                     tasa = f"{round(re/ag*100,1)}%" if ag > 0 else "—"
                     rows_sm.append({"Mes": mes, "SDR": sdr, "Agendadas": ag, "Realizadas": int(re), "Tasa": tasa})
                 if rows_sm:
@@ -428,12 +500,12 @@ with tab_cliente:
         cli_df = (
             _agg_by(
                 df_cli, "cliente",
-                extra_fn=lambda g: {"SDRs": int(g["sdr"].nunique()) if "sdr" in g.columns else 0}
+                extra_fn=lambda g: {"SDRs": int(g["sdr"].nunique()) if "sdr" in g.columns else 0},
             )
             .rename(columns={"cliente": "Cliente"})
         )
         cli_df = add_tasa(cli_df)
-        cli_df = add_cumplimiento(cli_df, "Cliente", goals.get("cliente", {}), months_count)
+        cli_df = add_cumplimiento(cli_df, "Cliente", goals.get("cliente", {}), months_in_period, ideal_pct)
         cli_df = cli_df.sort_values("Agendadas", ascending=False)
 
         # Gráfico
@@ -454,12 +526,20 @@ with tab_cliente:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        display_cols = ["Cliente", "Agendadas", "Realizadas", "Pendientes", "No realizadas", "Con propuesta", "SDRs", "Tasa realización"]
+        display_cols = ["Cliente", "Agendadas", "Realizadas", "Pendientes", "No realizadas",
+                        "Con propuesta", "SDRs", "Tasa realización"]
         if cli_df["Meta período"].sum() > 0:
-            display_cols += ["Meta período", "% Cumplimiento"]
+            display_cols += ["Meta período", "% Agendadas", "% Realizadas", "% Ideal hoy"]
 
         available = [c for c in display_cols if c in cli_df.columns]
-        st.dataframe(cli_df[available], use_container_width=True, hide_index=True)
+        st.dataframe(cli_df[available], use_container_width=True, hide_index=True,
+                     column_config={
+                         "% Ideal hoy": st.column_config.TextColumn(
+                             "% Ideal hoy",
+                             help=f"Porcentaje que debería estar cumplido a hoy ({today.strftime('%d/%m/%Y')}) "
+                                  f"según el avance del período ({ideal_pct}%)"
+                         )
+                     })
 
         # Desglose mensual
         with st.expander("📆 Ver desglose mensual por cliente"):
@@ -467,8 +547,8 @@ with tab_cliente:
             if mes_col3 in df_cli.columns:
                 rows_cm = []
                 for (mes, cli), g in df_cli.groupby([mes_col3, "cliente"]):
-                    ag = len(g)
-                    re = (g["estado"] == "Realizada").sum()
+                    ag   = len(g)
+                    re   = (g["estado"] == "Realizada").sum()
                     tasa = f"{round(re/ag*100,1)}%" if ag > 0 else "—"
                     rows_cm.append({"Mes": mes, "Cliente": cli, "Agendadas": ag, "Realizadas": int(re), "Tasa": tasa})
                 if rows_cm:
@@ -481,19 +561,18 @@ with tab_cliente:
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_analisis:
     day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    day_esp = {
+    day_esp   = {
         "Monday": "Lunes", "Tuesday": "Martes", "Wednesday": "Miércoles",
         "Thursday": "Jueves", "Friday": "Viernes", "Saturday": "Sábado", "Sunday": "Domingo",
     }
 
     col_l, col_r = st.columns(2)
 
-    # ── Días de la semana ──
     with col_l:
         st.subheader("📅 Días con más reuniones agendadas")
         if "dia_semana" in df.columns:
             by_day = df.groupby("dia_semana").size().reset_index(name="Reuniones")
-            by_day["Día"] = by_day["dia_semana"].map(day_esp)
+            by_day["Día"]   = by_day["dia_semana"].map(day_esp)
             by_day["orden"] = by_day["dia_semana"].map({d: i for i, d in enumerate(day_order)})
             by_day = by_day.sort_values("orden")
             fig = px.bar(by_day, x="Día", y="Reuniones",
@@ -505,7 +584,6 @@ with tab_analisis:
                 use_container_width=True, hide_index=True,
             )
 
-    # ── Origen de reuniones ──
     with col_r:
         st.subheader("🔗 Origen de reuniones")
         origen_col = next((c for c in ["origen", "fuente", "fuente_campana"] if c in df.columns), None)
@@ -525,7 +603,6 @@ with tab_analisis:
         else:
             st.info("No se encontró columna de Origen o Fuente campaña.")
 
-    # ── Heatmap Día × Hora ──
     st.subheader("🗓️ Heatmap: Día × Hora de agendamiento")
     if "hora_num" in df.columns and df["hora_num"].notna().any() and "dia_semana" in df.columns:
         df_heat = df.copy()
@@ -544,7 +621,6 @@ with tab_analisis:
 
     col_l2, col_r2 = st.columns(2)
 
-    # ── País ──
     with col_l2:
         st.subheader("🌎 Reuniones por País")
         if "pais" in df.columns:
@@ -552,7 +628,7 @@ with tab_analisis:
                 df[df["pais"].replace({"": pd.NA, "nan": pd.NA}).notna()]
                 .groupby("pais")
                 .apply(lambda g: pd.Series({
-                    "Agendadas": len(g),
+                    "Agendadas":  len(g),
                     "Realizadas": (g["estado"] == "Realizada").sum(),
                     "Pendientes": (g["estado"] == "Pendiente").sum(),
                 }))
@@ -561,10 +637,9 @@ with tab_analisis:
                 .sort_values("Agendadas", ascending=False)
             )
             pais_df["Tasa realización"] = pais_df.apply(
-                lambda r: f"{round(r['Realizadas']/r['Agendadas']*100,1)}%" if r['Agendadas'] > 0 else "—",
+                lambda r: f"{round(r['Realizadas']/r['Agendadas']*100,1)}%" if r["Agendadas"] > 0 else "—",
                 axis=1,
             )
-            # Mapa de burbujas si hay datos suficientes
             fig = px.bar(pais_df, x="Agendadas", y="País", orientation="h",
                          color="Agendadas", color_continuous_scale="Blues", height=350)
             fig.update_layout(coloraxis_showscale=False, yaxis_title="")
@@ -573,12 +648,11 @@ with tab_analisis:
         else:
             st.info("No se encontró columna de País.")
 
-    # ── Propuestas ──
     with col_r2:
         st.subheader("📄 Reuniones con Propuesta enviada")
         if "propuesta" in df.columns:
-            df_prop = df[df["propuesta"].replace({"": pd.NA, "nan": pd.NA}).notna()].copy()
-            n_prop = len(df_prop)
+            df_prop  = df[df["propuesta"].replace({"": pd.NA, "nan": pd.NA}).notna()].copy()
+            n_prop   = len(df_prop)
             pct_prop = round(n_prop / total * 100, 1) if total > 0 else 0
             st.metric("Con propuesta", f"{n_prop:,}", delta=f"{pct_prop}% del total filtrado")
 
@@ -609,127 +683,163 @@ with tab_analisis:
 # TAB 5 — Metas
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_metas:
-    st.subheader("🎯 Configuración de Metas Mensuales")
+    st.subheader(f"🎯 Configuración de Metas Mensuales — {_GOALS_YEAR}")
+
+    # Obtener activos desde Maestra IA
+    with st.spinner("Cargando activos desde Maestra IA..."):
+        maestra        = get_maestra_activos(st.secrets)
+    active_sdrs      = maestra.get("sdrs", [])
+    active_clientes  = maestra.get("clientes", [])
+
+    if not active_sdrs and not active_clientes:
+        st.warning("No se pudieron cargar los activos desde la Maestra IA. "
+                   "Verifica que la pestaña 'Maestra IA' exista y tenga datos.")
+
+    # Tooltip explicativo del % ideal
     st.info(
-        "Define cuántas reuniones debe agendar cada SDR y cada cliente por mes. "
-        "Las metas se guardan en el servidor y se usan en las pestañas de SDR y Cliente."
+        f"📌 **¿Cómo se calcula el % Ideal hoy?** "
+        f"Divide los días transcurridos del período entre el total de días del período. "
+        f"Para el período actual ({start_date.strftime('%d/%m/%Y')} → {end_date.strftime('%d/%m/%Y')}), "
+        f"el % ideal a hoy es **{ideal_pct}%**."
     )
 
-    col_sdr_m, col_cli_m = st.columns(2)
+    # ── Configuración de columnas del editor ──────────────────────────────────
+    month_col_config = {
+        label: st.column_config.NumberColumn(label, min_value=0, max_value=999, step=1, format="%d")
+        for label in _MONTH_LABELS
+    }
 
-    # ── Metas SDR ──
-    with col_sdr_m:
-        st.markdown("#### 👤 Meta mensual por SDR")
-        sdrs_all = sorted(
-            df_raw["sdr"].replace({"Sin asignar": pd.NA, "nan": pd.NA}).dropna().unique().tolist()
-        )
-        sdr_goals_curr = goals.get("sdr", {})
-        sdr_meta_df = pd.DataFrame({
-            "SDR": sdrs_all,
-            "Meta mensual": [int(sdr_goals_curr.get(s, 0)) for s in sdrs_all],
-        })
-        sdr_edited = st.data_editor(
+    # ──────────────────────────────────────────────────────────────────────────
+    # Tabla SDR
+    # ──────────────────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 👤 Metas por SDR")
+    st.caption("Solo se muestran los SDR marcados como **Activo** en la Maestra IA.")
+
+    if active_sdrs:
+        sdr_meta_df = build_meta_df(active_sdrs, goals.get("sdr", {}))
+        sdr_edited  = st.data_editor(
             sdr_meta_df,
             use_container_width=True,
             hide_index=True,
-            disabled=["SDR"],
+            disabled=["Nombre"],
             column_config={
-                "Meta mensual": st.column_config.NumberColumn(
-                    "Reuniones / mes", min_value=0, max_value=999, step=1, format="%d"
-                )
+                "Nombre": st.column_config.TextColumn("SDR", width="medium"),
+                **month_col_config,
             },
             key="sdr_meta_editor",
         )
-        if st.button("💾 Guardar metas SDR", use_container_width=True, type="primary"):
-            goals["sdr"] = dict(zip(sdr_edited["SDR"], sdr_edited["Meta mensual"].astype(int)))
+        if st.button("💾 Guardar metas SDR", use_container_width=True, type="primary", key="btn_save_sdr"):
+            goals["sdr"] = extract_goals_from_df(sdr_edited)
             save_goals(goals)
             st.success("✅ Metas de SDR guardadas correctamente")
             st.rerun()
+    else:
+        st.info("No se encontraron SDR activos en la Maestra IA.")
 
-    # ── Metas Clientes ──
-    with col_cli_m:
-        st.markdown("#### 🏢 Meta mensual por Cliente")
-        clientes_all = []
-        if "cliente" in df_raw.columns:
-            clientes_all = sorted(
-                df_raw["cliente"].replace({"": pd.NA, "nan": pd.NA}).dropna().unique().tolist()
-            )
-        cli_goals_curr = goals.get("cliente", {})
-        cli_meta_df = pd.DataFrame({
-            "Cliente": clientes_all,
-            "Meta mensual": [int(cli_goals_curr.get(c, 0)) for c in clientes_all],
-        })
-        cli_edited = st.data_editor(
+    # ──────────────────────────────────────────────────────────────────────────
+    # Tabla Clientes
+    # ──────────────────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 🏢 Metas por Cliente")
+    st.caption("Solo se muestran los clientes marcados como **Activo** en la Maestra IA.")
+
+    if active_clientes:
+        cli_meta_df = build_meta_df(active_clientes, goals.get("cliente", {}))
+        cli_edited  = st.data_editor(
             cli_meta_df,
             use_container_width=True,
             hide_index=True,
-            disabled=["Cliente"],
+            disabled=["Nombre"],
             column_config={
-                "Meta mensual": st.column_config.NumberColumn(
-                    "Reuniones / mes", min_value=0, max_value=999, step=1, format="%d"
-                )
+                "Nombre": st.column_config.TextColumn("Cliente", width="medium"),
+                **month_col_config,
             },
             key="cli_meta_editor",
         )
-        if st.button("💾 Guardar metas Clientes", use_container_width=True, type="primary"):
-            goals["cliente"] = dict(zip(cli_edited["Cliente"], cli_edited["Meta mensual"].astype(int)))
+        if st.button("💾 Guardar metas Clientes", use_container_width=True, type="primary", key="btn_save_cli"):
+            goals["cliente"] = extract_goals_from_df(cli_edited)
             save_goals(goals)
             st.success("✅ Metas de clientes guardadas correctamente")
             st.rerun()
+    else:
+        st.info("No se encontraron clientes activos en la Maestra IA.")
 
-    # ── Cumplimiento mes actual ──
-    st.divider()
-    st.markdown("#### 📊 Cumplimiento — Mes actual")
+    # ── Resumen cumplimiento mes actual ───────────────────────────────────────
+    st.markdown("---")
+    st.markdown(f"### 📊 Cumplimiento — {today.strftime('%B %Y').capitalize()}")
+    st.caption(
+        f"Reuniones agendadas en el mes actual vs. meta de {today.strftime('%B %Y')}. "
+        f"% Ideal hoy: **{calculate_ideal_pct(date(today.year, today.month, 1), date(today.year, today.month, calendar.monthrange(today.year, today.month)[1]), today)}%**"
+    )
 
+    this_month_key   = today.strftime("%Y-%m")
     this_month_start = date(today.year, today.month, 1)
-    df_mes = df_raw.copy()
-    fecha_col_mes = "fecha_agendamiento" if "fecha_agendamiento" in df_mes.columns else "fecha"
-    if fecha_col_mes in df_mes.columns:
-        df_mes = df_mes[df_mes[fecha_col_mes].notna()]
+    this_month_end   = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+    ideal_mes_actual = calculate_ideal_pct(this_month_start, this_month_end, today)
+
+    df_mes     = df_raw.copy()
+    fecha_c    = "fecha_agendamiento" if "fecha_agendamiento" in df_mes.columns else "fecha"
+    if fecha_c in df_mes.columns:
+        df_mes = df_mes[df_mes[fecha_c].notna()]
         df_mes = df_mes[
-            (df_mes[fecha_col_mes].dt.date >= this_month_start)
-            & (df_mes[fecha_col_mes].dt.date <= today)
+            (df_mes[fecha_c].dt.date >= this_month_start) &
+            (df_mes[fecha_c].dt.date <= today)
         ]
 
     col_a, col_b = st.columns(2)
 
     with col_a:
-        st.markdown(f"**Por SDR — {today.strftime('%B %Y')}**")
-        if "sdr" in df_mes.columns and goals.get("sdr"):
-            sdr_m = (
-                df_mes.groupby("sdr").size()
-                .reset_index(name="Agendadas")
-                .rename(columns={"sdr": "SDR"})
-            )
-            sdr_m["Meta"] = sdr_m["SDR"].map(goals["sdr"]).fillna(0).astype(int)
-            sdr_m["Faltan"] = (sdr_m["Meta"] - sdr_m["Agendadas"]).clip(lower=0)
-            sdr_m["% Cumplimiento"] = sdr_m.apply(
-                lambda r: f"{round(r['Agendadas']/r['Meta']*100,1)}%" if r["Meta"] > 0 else "—",
-                axis=1,
-            )
-            sdr_m = sdr_m.sort_values("Agendadas", ascending=False)
-            st.dataframe(sdr_m, use_container_width=True, hide_index=True)
-        elif not goals.get("sdr"):
+        st.markdown(f"**Por SDR**")
+        sdr_goals_mes = goals.get("sdr", {})
+        if "sdr" in df_mes.columns and sdr_goals_mes:
+            rows_sdr = []
+            for sdr_name in active_sdrs or sorted(df_mes["sdr"].dropna().unique()):
+                ag   = int((df_mes["sdr"] == sdr_name).sum())
+                re   = int(((df_mes["sdr"] == sdr_name) & (df_mes["estado"] == "Realizada")).sum())
+                meta = int(sdr_goals_mes.get(sdr_name, {}).get(this_month_key, 0)) if isinstance(sdr_goals_mes.get(sdr_name), dict) else 0
+                rows_sdr.append({
+                    "SDR":          sdr_name,
+                    "Agendadas":    ag,
+                    "Realizadas":   re,
+                    "Meta mes":     meta,
+                    "% Agendadas":  f"{round(ag/meta*100,1)}%" if meta > 0 else "—",
+                    "% Realizadas": f"{round(re/meta*100,1)}%" if meta > 0 else "—",
+                    "% Ideal hoy":  f"{ideal_mes_actual}%"     if meta > 0 else "—",
+                })
+            if rows_sdr:
+                st.dataframe(
+                    pd.DataFrame(rows_sdr).sort_values("Agendadas", ascending=False),
+                    use_container_width=True, hide_index=True,
+                )
+        else:
             st.info("Configura metas de SDR arriba para ver el cumplimiento.")
 
     with col_b:
-        st.markdown(f"**Por Cliente — {today.strftime('%B %Y')}**")
-        if "cliente" in df_mes.columns and goals.get("cliente"):
+        st.markdown(f"**Por Cliente**")
+        cli_goals_mes = goals.get("cliente", {})
+        if "cliente" in df_mes.columns and cli_goals_mes:
             df_mes_cli = df_mes[df_mes["cliente"].replace({"": pd.NA, "nan": pd.NA}).notna()]
-            cli_m = (
-                df_mes_cli.groupby("cliente").size()
-                .reset_index(name="Agendadas")
-                .rename(columns={"cliente": "Cliente"})
-            )
-            cli_m["Meta"] = cli_m["Cliente"].map(goals["cliente"]).fillna(0).astype(int)
-            cli_m["Faltan"] = (cli_m["Meta"] - cli_m["Agendadas"]).clip(lower=0)
-            cli_m["% Cumplimiento"] = cli_m.apply(
-                lambda r: f"{round(r['Agendadas']/r['Meta']*100,1)}%" if r["Meta"] > 0 else "—",
-                axis=1,
-            )
-            cli_m = cli_m.sort_values("Agendadas", ascending=False)
-            st.dataframe(cli_m, use_container_width=True, hide_index=True)
-        elif not goals.get("cliente"):
+            rows_cli = []
+            for cli_name in active_clientes or sorted(df_mes_cli["cliente"].dropna().unique()):
+                ag   = int((df_mes_cli["cliente"] == cli_name).sum())
+                re   = int(((df_mes_cli["cliente"] == cli_name) & (df_mes_cli["estado"] == "Realizada")).sum())
+                meta = int(cli_goals_mes.get(cli_name, {}).get(this_month_key, 0)) if isinstance(cli_goals_mes.get(cli_name), dict) else 0
+                rows_cli.append({
+                    "Cliente":      cli_name,
+                    "Agendadas":    ag,
+                    "Realizadas":   re,
+                    "Meta mes":     meta,
+                    "% Agendadas":  f"{round(ag/meta*100,1)}%" if meta > 0 else "—",
+                    "% Realizadas": f"{round(re/meta*100,1)}%" if meta > 0 else "—",
+                    "% Ideal hoy":  f"{ideal_mes_actual}%"     if meta > 0 else "—",
+                })
+            if rows_cli:
+                st.dataframe(
+                    pd.DataFrame(rows_cli).sort_values("Agendadas", ascending=False),
+                    use_container_width=True, hide_index=True,
+                )
+        else:
             st.info("Configura metas de clientes arriba para ver el cumplimiento.")
 
 
@@ -762,7 +872,7 @@ with tab_detalle:
     }
 
     show_cols = [c for c in col_labels if c in df.columns]
-    display = df[show_cols].copy()
+    display   = df[show_cols].copy()
 
     for dc in ["fecha_agendamiento", "fecha_reunion"]:
         if dc in display.columns:
@@ -772,10 +882,5 @@ with tab_detalle:
 
     if "Fecha agendamiento" in display.columns:
         display = display.sort_values("Fecha agendamiento", ascending=False)
-
-    # Colorear estado
-    def color_estado(val):
-        colors = {"Realizada": "#d4edda", "Pendiente": "#fff3cd", "No realizada": "#f8d7da"}
-        return f"background-color: {colors.get(val, 'white')}"
 
     st.dataframe(display, use_container_width=True, hide_index=True)
