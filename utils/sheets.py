@@ -101,7 +101,8 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
 
     # — Método 1: Sheets API v4 values.get (ignora filtros activos) ───────────
     try:
-        range_name = requests.utils.quote(f"'{tab_name}'", safe="'")
+        # La API v4 espera solo el nombre de la pestaña URL-encoded, SIN comillas simples
+        range_name = requests.utils.quote(tab_name)
         v4_url = (
             f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
             f"/values/{range_name}"
