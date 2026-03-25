@@ -381,6 +381,27 @@ c4.metric("🔄 Reagendar",        f"{reagendar_total:,}")
 c5.metric("❌ No realizadas",    f"{no_real_total:,}")
 c6.metric("📈 Tasa realización", f"{tasa_total}%")
 c7.metric("📄 Con propuesta",    f"{prop_total:,}")
+
+# ── KPIs de metas ──────────────────────────────────────────────────────────────
+_sdr_goals     = goals.get("sdr", {})
+_cli_goals     = goals.get("cliente", {})
+meta_sdr_total = sum(get_meta_periodo(n, _sdr_goals, months_in_period) for n in _sdr_goals)
+meta_cli_total = sum(get_meta_periodo(n, _cli_goals, months_in_period) for n in _cli_goals)
+
+cump_sdr = f"{round(realizadas_total / meta_sdr_total * 100, 1)}%" if meta_sdr_total > 0 else "Sin meta"
+cump_cli = f"{round(realizadas_total / meta_cli_total * 100, 1)}%" if meta_cli_total > 0 else "Sin meta"
+
+st.markdown("")   # pequeño espacio visual
+m1, m2, m3, m4, _sp1, _sp2, _sp3 = st.columns(7)
+m1.metric("🎯 Meta SDR",            f"{meta_sdr_total:,}",
+          help="Suma de metas mensuales de todos los SDR en el período filtrado")
+m2.metric("🎯 Meta Clientes",       f"{meta_cli_total:,}",
+          help="Suma de metas mensuales de todos los clientes en el período filtrado")
+m3.metric("📊 Cumplimiento SDR",    cump_sdr,
+          help="Reuniones realizadas ÷ Meta SDR del período")
+m4.metric("📊 Cumplimiento Cliente", cump_cli,
+          help="Reuniones realizadas ÷ Meta Clientes del período")
+
 st.divider()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
