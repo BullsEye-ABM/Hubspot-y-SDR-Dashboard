@@ -392,14 +392,14 @@ cump_sdr = f"{round(realizadas_total / meta_sdr_total * 100, 1)}%" if meta_sdr_t
 cump_cli = f"{round(realizadas_total / meta_cli_total * 100, 1)}%" if meta_cli_total > 0 else "Sin meta"
 
 st.markdown("")   # pequeño espacio visual
-m1, m2, m3, m4, _sp1, _sp2, _sp3 = st.columns(7)
-m1.metric("🎯 Meta SDR",            f"{meta_sdr_total:,}",
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("🎯 Meta SDR",             f"{meta_sdr_total:,}",
           help="Suma de metas mensuales de todos los SDR en el período filtrado")
-m2.metric("🎯 Meta Clientes",       f"{meta_cli_total:,}",
+m2.metric("🎯 Meta Clientes",        f"{meta_cli_total:,}",
           help="Suma de metas mensuales de todos los clientes en el período filtrado")
-m3.metric("📊 Cumplimiento SDR",    cump_sdr,
+m3.metric("📊 Cumplimiento SDR",     cump_sdr,
           help="Reuniones realizadas ÷ Meta SDR del período")
-m4.metric("📊 Cumplimiento Cliente", cump_cli,
+m4.metric("📊 Cumplimiento Clientes", cump_cli,
           help="Reuniones realizadas ÷ Meta Clientes del período")
 
 st.divider()
