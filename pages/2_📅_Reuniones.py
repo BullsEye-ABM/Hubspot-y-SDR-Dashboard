@@ -79,14 +79,19 @@ with st.expander("🔧 Diagnóstico técnico", expanded=False):
 
 today = date.today()
 
-# ── Estado de cada reunión ─────────────────────────────────────────────────────
+# ── Estado de cada reunión — directo desde columna "Realizado" (col J) ────────
+# Valores posibles en el sheet: Si, Pendiente, No, Reagendar
+_ESTADO_MAP = {
+    "si":        "Realizada",
+    "sí":        "Realizada",
+    "pendiente": "Pendiente",
+    "no":        "No realizada",
+    "reagendar": "Reagendar",
+}
+
 def calcular_estado(row) -> str:
-    if row.get("reunión_realizada", False):
-        return "Realizada"
-    fecha_r = row.get("fecha_reunion")
-    if pd.notna(fecha_r) and hasattr(fecha_r, "date") and fecha_r.date() >= today:
-        return "Pendiente"
-    return "No realizada"
+    val = str(row.get("realizado", "")).strip().lower()
+    return _ESTADO_MAP.get(val, "No realizada")
 
 df_raw["estado"] = df_raw.apply(calcular_estado, axis=1)
 
@@ -182,8 +187,8 @@ with st.sidebar:
 
     sel_estado = st.multiselect(
         "Estado",
-        ["Realizada", "Pendiente", "No realizada"],
-        default=["Realizada", "Pendiente", "No realizada"],
+        ["Realizada", "Pendiente", "No realizada", "Reagendar"],
+        default=["Realizada", "Pendiente", "No realizada", "Reagendar"],
     )
 
 
