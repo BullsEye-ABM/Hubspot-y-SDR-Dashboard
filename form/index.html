@@ -497,6 +497,7 @@ function initTomSelect(id) {
   tomInstances[id] = new TomSelect(`#${id}`, {
     allowEmptyOption: true,
     maxOptions: null,
+    dropdownParent: 'body',
     placeholder: document.querySelector(`#${id} option`)?.text || "Buscar...",
   });
 }
