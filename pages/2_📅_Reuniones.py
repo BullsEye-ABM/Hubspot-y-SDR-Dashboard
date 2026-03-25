@@ -113,7 +113,9 @@ else:
 def get_period_dates(preset: str):
     t = today
     if preset == "Este mes":
-        return date(t.year, t.month, 1), t
+        # Mes completo — incluye reuniones futuras (pendientes) del mes actual
+        last_day = calendar.monthrange(t.year, t.month)[1]
+        return date(t.year, t.month, 1), date(t.year, t.month, last_day)
     elif preset == "Mes pasado":
         first = date(t.year, t.month, 1)
         last  = first - timedelta(days=1)
@@ -123,15 +125,17 @@ def get_period_dates(preset: str):
     elif preset == "Últimos 6 meses":
         return t - timedelta(days=180), t
     elif preset == "Este año":
-        return date(t.year, 1, 1), t
+        last_day_year = date(t.year, 12, 31)
+        return date(t.year, 1, 1), last_day_year
     elif preset == "Año pasado":
         return date(t.year - 1, 1, 1), date(t.year - 1, 12, 31)
     elif preset == "Últimos 12 meses":
         return t - timedelta(days=365), t
     else:  # Todo
-        col   = df_raw["fecha_agendamiento"] if "fecha_agendamiento" in df_raw.columns else df_raw.get("fecha")
+        col   = df_raw["fecha_reunion"] if "fecha_reunion" in df_raw.columns else df_raw.get("fecha")
         min_d = col.dropna().min()
-        return (min_d.date() if pd.notna(min_d) else date(2023, 1, 1)), t
+        max_d = col.dropna().max()
+        return (min_d.date() if pd.notna(min_d) else date(2023, 1, 1)), (max_d.date() if pd.notna(max_d) else t)
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
@@ -147,8 +151,9 @@ with st.sidebar:
 
     fecha_filtro = st.radio(
         "Filtrar por fecha",
-        ["Fecha de agendamiento", "Fecha de reunión"],
+        ["Fecha de reunión", "Fecha de agendamiento"],
         horizontal=True,
+        help="'Fecha de reunión' = día en que ocurre la reunión · 'Fecha de agendamiento' = día en que el SDR la agendó",
     )
     fecha_col = "fecha_agendamiento" if "agendamiento" in fecha_filtro else "fecha_reunion"
 
@@ -162,8 +167,9 @@ with st.sidebar:
         ref_col   = df_raw[fecha_col] if fecha_col in df_raw.columns else df_raw.get("fecha")
         min_avail = ref_col.dropna().min()
         min_avail = min_avail.date() if pd.notna(min_avail) else date(2023, 1, 1)
+        max_avail = date(today.year + 1, 12, 31)   # permite seleccionar fechas futuras (reuniones pendientes)
         dr = st.date_input("Rango de fechas", value=(min_avail, today),
-                           min_value=min_avail, max_value=today)
+                           min_value=min_avail, max_value=max_avail)
         start_date, end_date = (dr[0], dr[1]) if len(dr) == 2 else (min_avail, today)
     else:
         start_date, end_date = get_period_dates(preset)

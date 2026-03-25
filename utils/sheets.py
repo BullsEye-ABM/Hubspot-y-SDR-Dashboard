@@ -22,28 +22,33 @@ COLUMN_MAP = {
     "sdr":                ["Responsable", "SDR", "Responsable SDR"],
     "empresa":            ["Empresa"],
     "contacto":           ["Contactos/Correo", "Contacto", "Correo"],
+    # "Fecha de agendamiento" = cuándo el SDR agendó la reunión
     "fecha_agendamiento": ["Fecha de agendamiento", "Fecha agendamiento", "Fecha Agendamiento"],
-    "fecha_reunion":      ["Fecha Mes de la reunión", "Fecha mes de la reunión",
+    # "Fecha de la reunión" = cuándo se realizará/realizó la reunión (fecha principal)
+    "fecha_reunion":      ["Fecha de la reunión", "Fecha de la reunion",
+                           "Fecha Mes de la reunión", "Fecha mes de la reunión",
                            "Fecha Mes de la Reunión", "Fecha mes de la reunion",
-                           "Fecha de la reunión", "Fecha reunión", "Fecha de la reunion",
-                           "Fecha de la reunión reserva", "Fecha Reunion"],
+                           "Fecha reunión", "Fecha de la reunión reserva", "Fecha Reunion"],
     "hora":               ["Hora"],
     "prospecto":          ["Prospecto"],
     "pais":               ["País", "Pais", "País "],
     "realizado":          ["Realizado", "Realizada"],
     "ejecutivo":          ["Ejecutivo"],
     "propuesta":          ["Propuesta/Oportunidad", "Propuesta", "Oportunidad"],
+    "sales_manager":      ["Sales Manager"],
+    "industria":          ["Industria"],
+    "fecha_registro":     ["Fecha de registro"],
     "piloto":             ["Piloto"],
     "mes_agenda":         ["Mes agenda Reunion Fecha", "Mes Agenda"],
     "mes_reunion":        ["Mes de la reunión", "Mes de la reunion", "Mes reunión"],
-    "cargo":              ["CARGO", "Cargo"],
-    "telefono":           ["TELEFONO", "Teléfono", "Telefono"],
+    "cargo":              ["Cargo", "CARGO"],
+    "telefono":           ["Teléfono", "TELEFONO", "Telefono"],
     "asiste":             ["Asiste a Reunión", "Asiste a Reunion", "Asiste"],
     "link_hubspot":       ["Link de Hubspot", "HubSpot", "Link Hubspot"],
     "kam":                ["KAM", "Kam"],
     "comentarios":        ["Comentarios", "COMENTARIOS"],
     "fuente":             ["Fuente Campaña", "Fuente Campana", "Fuente campaña"],
-    "comentario":         ["COMENTARIO", "Comentario"],
+    "comentario":         ["Comentario de la reunión", "COMENTARIO", "Comentario"],
     "comentario_ih":      ["comentario IH", "Comentario IH"],
     "flota":              ["Flota informada", "Flota"],
 }
@@ -156,7 +161,7 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
     """
     try:
         sheet_id  = _secrets["google_sheets"]["sheet_id"]
-        tab_name  = _secrets["google_sheets"].get("worksheet_name", "Gestión Reuniones")
+        tab_name  = _secrets["google_sheets"].get("worksheet_name", "API Reuniones - IA")
         api_key   = _secrets["google_sheets"]["api_key"]
     except KeyError as e:
         st.error(f"Falta configuración en secrets.toml: {e}")
