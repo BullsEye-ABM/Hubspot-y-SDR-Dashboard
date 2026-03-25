@@ -8,44 +8,67 @@ Sheet: "Metas equipo BullsEye / reuniones / oportunidades"
 Pestaña: "Gestión de reuniones"
 """
 
+import unicodedata
 import requests
 import pandas as pd
 import streamlit as st
 
 
-# ── Mapeo exacto de columnas del sheet ────────────────────────────────────────
-# Formato: nombre_interno → nombre_exacto_en_el_sheet
+# ── Mapeo de columnas: nombre_interno → posibles nombres en el sheet ──────────
+# Cada clave interna puede tener MÚLTIPLES variantes posibles del encabezado.
 COLUMN_MAP = {
-    "cliente":             "Cliente",
-    "origen":              "Origen",
-    "sdr":                 "Responsable",
-    "empresa":             "Empresa",
-    "contacto":            "Contactos/Correo",
-    "fecha_agendamiento":  "Fecha de agendamiento",
-    "fecha_reunion":       "Fecha de la reunión reserva",
-    "hora":                "Hora",
-    "prospecto":           "Prospecto",
-    "pais":                "País",
-    "realizado":           "Realizado",
-    "ejecutivo":           "Ejecutivo",
-    "propuesta":           "Propuesta/Oportunidad",
-    "piloto":              "Piloto",
-    "mes_agenda":          "Mes agenda Reunion Fecha",
-    "mes_reunion":         "Mes de la reunión",
-    "cargo":               "CARGO",
-    "telefono":            "TELEFONO",
-    "asiste":              "Asiste a Reunión",
-    "link_hubspot":        "Link de Hubspot",
-    "kam":                 "KAM",
-    "comentarios":         "Comentarios",
-    "fuente":              "Fuente Campaña",
-    "comentario":          "COMENTARIO",
-    "comentario_ih":       "comentario IH",
-    "flota":               "Flota informada",
+    "cliente":            ["Cliente"],
+    "origen":             ["Origen"],
+    "sdr":                ["Responsable", "SDR", "Responsable SDR"],
+    "empresa":            ["Empresa"],
+    "contacto":           ["Contactos/Correo", "Contacto", "Correo"],
+    "fecha_agendamiento": ["Fecha de agendamiento", "Fecha agendamiento", "Fecha Agendamiento"],
+    "fecha_reunion":      ["Fecha de la reunión", "Fecha reunión", "Fecha de la reunion",
+                           "Fecha de la reunión reserva", "Fecha Reunion"],
+    "hora":               ["Hora"],
+    "prospecto":          ["Prospecto"],
+    "pais":               ["País", "Pais", "País "],
+    "realizado":          ["Realizado", "Realizada"],
+    "ejecutivo":          ["Ejecutivo"],
+    "propuesta":          ["Propuesta/Oportunidad", "Propuesta", "Oportunidad"],
+    "piloto":             ["Piloto"],
+    "mes_agenda":         ["Mes agenda Reunion Fecha", "Mes Agenda"],
+    "mes_reunion":        ["Mes de la reunión", "Mes de la reunion", "Mes reunión"],
+    "cargo":              ["CARGO", "Cargo"],
+    "telefono":           ["TELEFONO", "Teléfono", "Telefono"],
+    "asiste":             ["Asiste a Reunión", "Asiste a Reunion", "Asiste"],
+    "link_hubspot":       ["Link de Hubspot", "HubSpot", "Link Hubspot"],
+    "kam":                ["KAM", "Kam"],
+    "comentarios":        ["Comentarios", "COMENTARIOS"],
+    "fuente":             ["Fuente Campaña", "Fuente Campana", "Fuente campaña"],
+    "comentario":         ["COMENTARIO", "Comentario"],
+    "comentario_ih":      ["comentario IH", "Comentario IH"],
+    "flota":              ["Flota informada", "Flota"],
 }
 
-# Diccionario invertido para renombrar columnas del sheet al nombre interno
-_REVERSE_MAP = {v: k for k, v in COLUMN_MAP.items()}
+
+def _normalizar(texto: str) -> str:
+    """Minúsculas + sin tildes para comparación flexible."""
+    return unicodedata.normalize("NFD", texto).encode("ascii", "ignore").decode().lower().strip()
+
+
+def _build_rename_map(sheet_cols: list[str]) -> dict[str, str]:
+    """
+    Construye el dict {columna_sheet: nombre_interno} probando:
+    1. Coincidencia exacta con alguna de las variantes
+    2. Coincidencia normalizada (sin tildes, minúsculas)
+    """
+    rename = {}
+    for interno, variantes in COLUMN_MAP.items():
+        variantes_norm = {_normalizar(v): v for v in variantes}
+        for col in sheet_cols:
+            if col in variantes:                   # exacto
+                rename[col] = interno
+                break
+            if _normalizar(col) in variantes_norm:  # normalizado
+                rename[col] = interno
+                break
+    return rename
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -57,7 +80,7 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
     """
     try:
         sheet_id  = _secrets["google_sheets"]["sheet_id"]
-        tab_name  = _secrets["google_sheets"].get("worksheet_name", "Gestión de reuniones")
+        tab_name  = _secrets["google_sheets"].get("worksheet_name", "Gestión Reuniones")
         api_key   = _secrets["google_sheets"]["api_key"]
     except KeyError as e:
         st.error(f"Falta configuración en secrets.toml: {e}")
@@ -109,8 +132,21 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         st.warning("El Google Sheet no tiene datos.")
         return pd.DataFrame()
 
-    # Renombrar columnas al nombre interno
-    df = df.rename(columns=_REVERSE_MAP)
+    # Renombrar columnas al nombre interno (con matching flexible)
+    rename_map = _build_rename_map(df.columns.tolist())
+    df = df.rename(columns=rename_map)
+
+    # Debug: mostrar columnas encontradas y no encontradas (solo en modo dev)
+    import os
+    if os.environ.get("BULLSEYE_DEBUG") == "1":
+        mapped = set(rename_map.values())
+        all_internal = set(COLUMN_MAP.keys())
+        missing = all_internal - mapped
+        with st.expander("🔧 Debug columnas del sheet", expanded=True):
+            st.write("**Columnas en el sheet:**", df.columns.tolist())
+            st.write("**Mapeadas correctamente:**", sorted(mapped))
+            if missing:
+                st.warning(f"**No encontradas:** {sorted(missing)}")
 
     # Eliminar filas completamente vacías
     df = df.replace("", pd.NA).dropna(how="all").fillna("")
