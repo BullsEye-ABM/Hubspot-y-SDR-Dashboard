@@ -444,12 +444,21 @@ tab_periodo, tab_sdr, tab_cliente, tab_analisis, tab_metas, tab_detalle = st.tab
 with tab_periodo:
     st.subheader(f"Evolución de reuniones — {preset}")
 
-    mes_col = "mes_agenda" if "mes_agenda" in df.columns and df["mes_agenda"].ne("").any() else "mes"
+    # Usar la misma columna de fecha con la que se filtró, así los meses corresponden al período visible
+    _fc = fecha_col if fecha_col in df.columns else ("fecha_reunion" if "fecha_reunion" in df.columns else None)
+    if _fc:
+        df_per = df[df[_fc].notna()].copy()
+        df_per["_mes_periodo"] = df_per[_fc].dt.to_period("M").astype(str)
+    else:
+        df_per = df.copy()
+        df_per["_mes_periodo"] = df_per.get("mes", pd.Series(dtype=str))
 
-    if mes_col in df.columns and df[mes_col].ne("").any():
+    df_per = df_per[df_per["_mes_periodo"].ne("") & df_per["_mes_periodo"].notna()]
+
+    if not df_per.empty and df_per["_mes_periodo"].ne("").any():
         monthly = (
-            _agg_by(df, mes_col)
-            .rename(columns={mes_col: "Mes"})
+            _agg_by(df_per, "_mes_periodo")
+            .rename(columns={"_mes_periodo": "Mes"})
             .sort_values("Mes")
         )
 
@@ -566,7 +575,7 @@ with tab_periodo:
         with st.expander("📋 Ver tabla de datos"):
             st.dataframe(monthly_disp, use_container_width=True, hide_index=True)
     else:
-        st.info("No hay datos de período suficientes para generar este análisis.")
+        st.info("No hay datos para el período seleccionado.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
