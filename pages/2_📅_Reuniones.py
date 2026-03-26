@@ -592,24 +592,6 @@ with tab_sdr:
         sdr_df = add_cumplimiento(sdr_df, "SDR", goals.get("sdr", {}), months_in_period, ideal_pct)
         sdr_df = sdr_df.sort_values("Agendadas", ascending=False)
 
-        # Gráfico
-        fig = go.Figure()
-        fig.add_bar(y=sdr_df["SDR"], x=sdr_df["Agendadas"],  name="Agendadas",  orientation="h", marker_color="#a8dadc")
-        fig.add_bar(y=sdr_df["SDR"], x=sdr_df["Realizadas"], name="Realizadas", orientation="h", marker_color="#457b9d")
-        if sdr_df["Meta período"].sum() > 0:
-            fig.add_scatter(
-                y=sdr_df["SDR"], x=sdr_df["Meta período"], name="Meta",
-                mode="markers",
-                marker=dict(symbol="line-ns-open", size=18, color="red", line=dict(width=3, color="red")),
-            )
-        fig.update_layout(
-            barmode="group",
-            height=max(300, len(sdr_df) * 55),
-            xaxis_title="Reuniones", yaxis_title="",
-            legend=dict(orientation="h", y=1.08),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
         display_cols = ["SDR", "Agendadas", "Realizadas", "Pendientes", "No realizadas", "Con propuesta", "Tasa realización"]
         if sdr_df["Meta período"].sum() > 0:
             display_cols += ["Meta período", "% Agendadas", "% Realizadas", "% Ideal hoy"]
@@ -660,24 +642,6 @@ with tab_cliente:
         cli_df = add_cumplimiento(cli_df, "Cliente", goals.get("cliente", {}), months_in_period, ideal_pct)
         cli_df = cli_df.sort_values("Agendadas", ascending=False)
 
-        # Gráfico
-        fig = go.Figure()
-        fig.add_bar(y=cli_df["Cliente"], x=cli_df["Agendadas"],  name="Agendadas",  orientation="h", marker_color="#a8dadc")
-        fig.add_bar(y=cli_df["Cliente"], x=cli_df["Realizadas"], name="Realizadas", orientation="h", marker_color="#457b9d")
-        if cli_df["Meta período"].sum() > 0:
-            fig.add_scatter(
-                y=cli_df["Cliente"], x=cli_df["Meta período"], name="Meta",
-                mode="markers",
-                marker=dict(symbol="line-ns-open", size=18, color="red", line=dict(width=3, color="red")),
-            )
-        fig.update_layout(
-            barmode="group",
-            height=max(300, len(cli_df) * 55),
-            xaxis_title="Reuniones", yaxis_title="",
-            legend=dict(orientation="h", y=1.08),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
         display_cols = ["Cliente", "Agendadas", "Realizadas", "Pendientes", "No realizadas",
                         "Con propuesta", "SDRs", "Tasa realización"]
         if cli_df["Meta período"].sum() > 0:
@@ -718,25 +682,67 @@ with tab_analisis:
         "Thursday": "Jueves", "Friday": "Viernes", "Saturday": "Sábado", "Sunday": "Domingo",
     }
 
+    def _day_bar_chart(byday_df, count_col, bar_color, text_color, title):
+        """Bar chart de reuniones por día con números encima."""
+        max_val = int(byday_df[count_col].max()) if not byday_df.empty else 1
+        fig = go.Figure(go.Bar(
+            x=byday_df["Día"],
+            y=byday_df[count_col],
+            text=byday_df[count_col],
+            textposition="outside",
+            textfont=dict(size=14, color=text_color, family="Inter, sans-serif"),
+            marker=dict(color=bar_color, line=dict(width=0), opacity=0.85),
+        ))
+        fig.update_layout(
+            title=dict(text=title, font=dict(size=15, color="#333"), x=0),
+            height=320,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            xaxis=dict(
+                title="", showgrid=False,
+                linecolor="#e0e0e0", linewidth=1,
+                tickfont=dict(size=13, color="#444"),
+            ),
+            yaxis=dict(
+                showgrid=True, gridcolor="rgba(0,0,0,0.05)",
+                showticklabels=False,
+                range=[0, max_val * 1.28],
+                zeroline=False,
+            ),
+            margin=dict(t=45, b=20, l=10, r=10),
+            showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
     col_l, col_r = st.columns(2)
 
-    with col_l:
-        st.subheader("📅 Días con más reuniones agendadas")
-        if "dia_semana" in df.columns:
-            by_day = df.groupby("dia_semana").size().reset_index(name="Reuniones")
-            by_day["Día"]   = by_day["dia_semana"].map(day_esp)
-            by_day["orden"] = by_day["dia_semana"].map({d: i for i, d in enumerate(day_order)})
-            by_day = by_day.sort_values("orden")
-            fig = px.bar(by_day, x="Día", y="Reuniones",
-                         color="Reuniones", color_continuous_scale="Blues", height=320)
-            fig.update_layout(coloraxis_showscale=False, xaxis_title="")
-            st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(
-                by_day[["Día", "Reuniones"]].sort_values("Reuniones", ascending=False),
-                use_container_width=True, hide_index=True,
-            )
+    if "dia_semana" in df.columns:
+        # Datos agendadas
+        by_ag = df.groupby("dia_semana").size().reset_index(name="N")
+        by_ag["Día"]   = by_ag["dia_semana"].map(day_esp)
+        by_ag["orden"] = by_ag["dia_semana"].map({d: i for i, d in enumerate(day_order)})
+        by_ag = by_ag.sort_values("orden")
 
-    with col_r:
+        # Datos realizadas
+        by_re = (
+            df[df["estado"] == "Realizada"]
+            .groupby("dia_semana").size().reset_index(name="N")
+        )
+        by_re["Día"]   = by_re["dia_semana"].map(day_esp)
+        by_re["orden"] = by_re["dia_semana"].map({d: i for i, d in enumerate(day_order)})
+        by_re = by_re.sort_values("orden")
+
+        with col_l:
+            _day_bar_chart(by_ag, "N", "#457b9d", "#1a5276", "📅 Agendadas por día de semana")
+        with col_r:
+            _day_bar_chart(by_re, "N", "#52b788", "#1a6b3c", "✅ Realizadas por día de semana")
+    else:
+        col_l.info("No hay datos de día de semana.")
+
+    st.divider()
+
+    col_orig, _ = st.columns([1, 1])
+    with col_orig:
         st.subheader("🔗 Origen de reuniones")
         origen_col = next((c for c in ["origen", "fuente", "fuente_campana"] if c in df.columns), None)
         if origen_col:
