@@ -749,15 +749,39 @@ with tab_analisis:
             orig_df = (
                 df[df[origen_col].replace({"": pd.NA, "nan": pd.NA}).notna()]
                 .groupby(origen_col).size().reset_index(name="Reuniones")
-                .sort_values("Reuniones", ascending=False)
+                .sort_values("Reuniones", ascending=True)   # ascending para que el mayor quede arriba
             )
-            fig = px.pie(orig_df, values="Reuniones", names=origen_col,
-                         height=320, hole=0.4, color_discrete_sequence=px.colors.qualitative.Set2)
-            fig.update_traces(textposition="inside", textinfo="percent+label")
-            fig.update_layout(showlegend=False)
+            total_orig = orig_df["Reuniones"].sum()
+            orig_df["Pct"] = (orig_df["Reuniones"] / total_orig * 100).round(1)
+            orig_df["label"] = orig_df.apply(lambda r: f"  {r['Reuniones']}  ({r['Pct']}%)", axis=1)
+
+            palette = ["#264653","#2a9d8f","#e9c46a","#f4a261","#e76f51","#457b9d","#a8dadc","#81b29a","#f2cc8f"]
+            colors  = [palette[i % len(palette)] for i in range(len(orig_df))]
+
+            fig = go.Figure(go.Bar(
+                x=orig_df["Reuniones"],
+                y=orig_df[origen_col],
+                orientation="h",
+                text=orig_df["label"],
+                textposition="outside",
+                textfont=dict(size=12, color="#333", family="Inter, sans-serif"),
+                marker=dict(color=colors, line=dict(width=0)),
+            ))
+            max_orig = int(orig_df["Reuniones"].max()) if not orig_df.empty else 1
+            fig.update_layout(
+                height=max(200, len(orig_df) * 42 + 40),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                xaxis=dict(
+                    showgrid=True, gridcolor="rgba(0,0,0,0.05)",
+                    showticklabels=False, zeroline=False,
+                    range=[0, max_orig * 1.45],
+                ),
+                yaxis=dict(showgrid=False, tickfont=dict(size=13)),
+                margin=dict(t=10, b=10, l=10, r=10),
+                showlegend=False,
+            )
             st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(orig_df.rename(columns={origen_col: "Origen"}),
-                         use_container_width=True, hide_index=True)
         else:
             st.info("No se encontró columna de Origen o Fuente campaña.")
 
