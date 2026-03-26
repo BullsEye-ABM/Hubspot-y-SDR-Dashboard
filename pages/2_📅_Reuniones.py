@@ -164,7 +164,7 @@ with st.sidebar:
         "Este mes", "Mes pasado", "Últimos 3 meses", "Últimos 6 meses",
         "Este año", "Año pasado", "Últimos 12 meses", "Todo", "Personalizado",
     ]
-    preset = st.selectbox("Período", preset_opts, index=0)
+    preset = st.selectbox("Período", preset_opts, index=3)  # default: Últimos 6 meses
 
     if preset == "Personalizado":
         ref_col   = df_raw[fecha_col] if fecha_col in df_raw.columns else df_raw.get("fecha")
@@ -452,33 +452,122 @@ with tab_periodo:
             .rename(columns={mes_col: "Mes"})
             .sort_values("Mes")
         )
-        monthly = add_tasa(monthly)
+
+        # Calcular tasa numérica para la línea
+        monthly["_tasa_num"] = monthly.apply(
+            lambda r: round(r["Realizadas"] / r["Agendadas"] * 100, 1)
+            if r["Agendadas"] > 0 else None,
+            axis=1,
+        )
+
+        # Etiquetas de mes más legibles: "2026-03" → "Mar 26"
+        _MES_ES = {
+            "01": "Ene", "02": "Feb", "03": "Mar", "04": "Abr",
+            "05": "May", "06": "Jun", "07": "Jul", "08": "Ago",
+            "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dic",
+        }
+        def _mes_label(s):
+            parts = str(s).split("-")
+            if len(parts) == 2:
+                return f"{_MES_ES.get(parts[1], parts[1])} {parts[0][2:]}"
+            return s
+        monthly["_label"] = monthly["Mes"].apply(_mes_label)
 
         fig = go.Figure()
-        fig.add_bar(x=monthly["Mes"], y=monthly["Agendadas"],    name="Agendadas",    marker_color="#a8dadc")
-        fig.add_bar(x=monthly["Mes"], y=monthly["Realizadas"],   name="Realizadas",   marker_color="#457b9d")
-        fig.add_bar(x=monthly["Mes"], y=monthly["Pendientes"],   name="Pendientes",   marker_color="#f4a261")
-        fig.add_bar(x=monthly["Mes"], y=monthly["No realizadas"],name="No realizadas",marker_color="#e63946")
+
+        # Barra: Agendadas (fondo semitransparente)
+        fig.add_bar(
+            x=monthly["_label"],
+            y=monthly["Agendadas"],
+            name="Agendadas",
+            marker=dict(color="rgba(168,218,220,0.55)", line=dict(color="#a8dadc", width=1.5)),
+            text=monthly["Agendadas"],
+            textposition="outside",
+            textfont=dict(size=13, color="#2d7d9a", family="Inter, sans-serif"),
+            cliponaxis=False,
+        )
+
+        # Barra: Realizadas (superpuesta, más opaca)
+        fig.add_bar(
+            x=monthly["_label"],
+            y=monthly["Realizadas"],
+            name="Realizadas",
+            marker=dict(color="rgba(69,123,157,0.90)", line=dict(color="#2d6a8f", width=1)),
+            text=monthly["Realizadas"],
+            textposition="inside",
+            insidetextanchor="middle",
+            textfont=dict(size=12, color="white", family="Inter, sans-serif"),
+        )
+
+        # Línea: Tasa de realización (eje derecho)
+        tasa_text = [
+            f"{t:.0f}%" if t is not None else ""
+            for t in monthly["_tasa_num"]
+        ]
+        fig.add_scatter(
+            x=monthly["_label"],
+            y=monthly["_tasa_num"],
+            name="Tasa realización",
+            mode="lines+markers+text",
+            yaxis="y2",
+            line=dict(color="#f4a261", width=2.5),
+            marker=dict(size=9, color="#f4a261", symbol="circle",
+                        line=dict(color="white", width=2)),
+            text=tasa_text,
+            textposition="top center",
+            textfont=dict(size=10, color="#f4a261"),
+        )
+
+        max_ag = int(monthly["Agendadas"].max()) if not monthly.empty else 10
         fig.update_layout(
-            barmode="group", height=380,
-            xaxis_title="Mes", yaxis_title="Reuniones",
-            legend=dict(orientation="h", y=1.12),
+            barmode="overlay",
+            height=460,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            xaxis=dict(
+                title="",
+                tickangle=-20,
+                showgrid=False,
+                linecolor="#e0e0e0",
+                tickfont=dict(size=12),
+            ),
+            yaxis=dict(
+                title="Reuniones",
+                gridcolor="rgba(0,0,0,0.06)",
+                zeroline=False,
+                range=[0, max_ag * 1.30],   # espacio para labels "outside"
+            ),
+            yaxis2=dict(
+                title="Tasa realización %",
+                overlaying="y",
+                side="right",
+                range=[0, 130],
+                showgrid=False,
+                ticksuffix="%",
+                tickfont=dict(color="#f4a261"),
+                titlefont=dict(color="#f4a261"),
+            ),
+            legend=dict(
+                orientation="h",
+                y=1.06, x=0,
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="#e0e0e0",
+                borderwidth=1,
+            ),
+            margin=dict(t=60, b=40, l=50, r=60),
+            hoverlabel=dict(bgcolor="white", font_size=13),
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        st.dataframe(
-            monthly,
-            use_container_width=True, hide_index=True,
-            column_config={
-                "Mes":              st.column_config.TextColumn("Mes"),
-                "Agendadas":        st.column_config.NumberColumn("Agendadas",    format="%d"),
-                "Realizadas":       st.column_config.NumberColumn("Realizadas",   format="%d"),
-                "Pendientes":       st.column_config.NumberColumn("Pendientes",   format="%d"),
-                "No realizadas":    st.column_config.NumberColumn("No realizadas",format="%d"),
-                "Con propuesta":    st.column_config.NumberColumn("Con propuesta",format="%d"),
-                "Tasa realización": st.column_config.TextColumn("Tasa realización"),
-            },
+        # Resumen compacto bajo el gráfico
+        resumen_cols = ["Mes", "Agendadas", "Realizadas", "Pendientes", "Reagendar",
+                        "No realizadas", "Con propuesta"]
+        monthly_disp = monthly[[c for c in resumen_cols if c in monthly.columns]].copy()
+        monthly_disp["Tasa"] = monthly["_tasa_num"].apply(
+            lambda t: f"{t:.1f}%" if t is not None else "—"
         )
+        with st.expander("📋 Ver tabla de datos"):
+            st.dataframe(monthly_disp, use_container_width=True, hide_index=True)
     else:
         st.info("No hay datos de período suficientes para generar este análisis.")
 
