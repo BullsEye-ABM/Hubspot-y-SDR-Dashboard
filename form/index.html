@@ -317,6 +317,12 @@
       text-align: center; padding: 48px 24px;
       color: var(--muted); font-size: 14px;
     }
+    #edit-search-input:focus {
+      border-color: var(--border-focus) !important;
+      box-shadow: 0 0 0 3px rgba(0,212,255,.09);
+      outline: none;
+    }
+    .meeting-card.hidden { display: none; }
   </style>
 </head>
 <body>
@@ -552,6 +558,20 @@
           <select id="edit-client-select">
             <option value="">Selecciona el cliente...</option>
           </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Buscador (aparece cuando hay reuniones cargadas) -->
+    <div id="edit-search-wrap" style="display:none">
+      <div class="card" style="padding:18px 24px;">
+        <div class="field" style="margin:0;">
+          <label style="margin-bottom:8px; display:block;">🔍 Buscar empresa o contacto</label>
+          <input type="text" id="edit-search-input"
+                 placeholder="Escribe para filtrar..."
+                 oninput="filterMeetings(this.value)"
+                 style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;transition:border-color .18s;" />
+          <div id="edit-search-count" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
         </div>
       </div>
     </div>
@@ -846,7 +866,15 @@ async function loadClientsForSDR(sdrName) {
       allowEmptyOption: true,
       maxOptions: null,
       dropdownParent: 'body',
-      onChange: (val) => { if (val) loadMeetings(sdrName, val); else list.innerHTML = ""; },
+      onChange: (val) => {
+        if (val) {
+          loadMeetings(sdrName, val);
+        } else {
+          list.innerHTML = "";
+          document.getElementById("edit-search-wrap").style.display = "none";
+          document.getElementById("edit-search-input").value = "";
+        }
+      },
     });
   } catch(e) {
     clientSel.innerHTML = '<option value="">⚠️ Error de conexión</option>';
@@ -872,13 +900,29 @@ async function loadMeetings(sdrName, clienteName) {
 }
 
 function renderMeetings(meetings) {
-  const list = document.getElementById("meetings-list");
+  const list        = document.getElementById("meetings-list");
+  const searchWrap  = document.getElementById("edit-search-wrap");
+  const searchInput = document.getElementById("edit-search-input");
+  const searchCount = document.getElementById("edit-search-count");
+
+  // Resetear buscador
+  if (searchInput) searchInput.value = "";
+  if (searchCount) searchCount.textContent = "";
+
   if (!meetings.length) {
+    searchWrap.style.display = "none";
     list.innerHTML = '<div class="no-meetings">✅ Este SDR no tiene reuniones pendientes.</div>';
     return;
   }
+
+  // Mostrar buscador
+  searchWrap.style.display = "block";
+  if (searchCount) searchCount.textContent =
+    `${meetings.length} reunión${meetings.length !== 1 ? "es" : ""} encontrada${meetings.length !== 1 ? "s" : ""}`;
+
   list.innerHTML = meetings.map((m, i) => `
-    <div class="meeting-card" id="mc-${i}">
+    <div class="meeting-card" id="mc-${i}"
+         data-search="${[m.empresa, m.contacto].filter(Boolean).join(" ").toLowerCase()}">
       <div class="meeting-meta">
         <div class="meeting-empresa">${m.empresa || "Sin empresa"}</div>
         <div class="meeting-detail">
@@ -954,6 +998,25 @@ async function updateMeeting(idx, rowNum) {
     status.className = "update-status fail";
     btn.disabled = false;
     btn.textContent = "Actualizar ✓";
+  }
+}
+
+// ── Buscador en modo edición ───────────────────────────────────────────────
+function filterMeetings(query) {
+  const q     = query.trim().toLowerCase();
+  const cards = document.querySelectorAll("#meetings-list .meeting-card");
+  let visible = 0;
+  cards.forEach(card => {
+    const haystack = card.dataset.search || "";
+    const match    = !q || haystack.includes(q);
+    card.classList.toggle("hidden", !match);
+    if (match) visible++;
+  });
+  const count = document.getElementById("edit-search-count");
+  if (count) {
+    count.textContent = q
+      ? `${visible} resultado${visible !== 1 ? "s" : ""} para "${query}"`
+      : `${cards.length} reunión${cards.length !== 1 ? "es" : ""} encontrada${cards.length !== 1 ? "s" : ""}`;
   }
 }
 
