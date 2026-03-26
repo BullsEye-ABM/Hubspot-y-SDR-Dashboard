@@ -442,7 +442,7 @@ tab_periodo, tab_sdr, tab_cliente, tab_analisis, tab_metas, tab_detalle = st.tab
 # TAB 1 — Por Período
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_periodo:
-    st.subheader("Evolución últimos 6 meses")
+    st.subheader(f"Evolución de reuniones — {preset}")
 
     mes_col = "mes_agenda" if "mes_agenda" in df.columns and df["mes_agenda"].ne("").any() else "mes"
 
@@ -535,7 +535,6 @@ with tab_periodo:
                 gridcolor="rgba(0,0,0,0.06)",
                 zeroline=False,
                 range=[0, max_ag * 1.35],   # espacio para labels "outside"
-                cliponaxis=False,
             ),
             yaxis2=dict(
                 title="Tasa realización %",
@@ -555,7 +554,7 @@ with tab_periodo:
                 borderwidth=1,
             ),
             margin=dict(t=60, b=40, l=50, r=60),
-            hoverlabel=dict(bgcolor="white", font_size=13),
+            hoverlabel=dict(bgcolor="white", font=dict(size=13)),
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -564,7 +563,7 @@ with tab_periodo:
                         "No realizadas", "Con propuesta"]
         monthly_disp = monthly[[c for c in resumen_cols if c in monthly.columns]].copy()
         monthly_disp["Tasa"] = monthly["_tasa_num"].apply(
-            lambda t: f"{t:.1f}%" if t is not None else "—"
+            lambda t: f"{t:.1f}%" if (t == t) else "—"   # t != t detecta NaN
         )
         with st.expander("📋 Ver tabla de datos"):
             st.dataframe(monthly_disp, use_container_width=True, hide_index=True)
