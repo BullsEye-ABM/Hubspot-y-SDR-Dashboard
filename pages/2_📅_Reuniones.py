@@ -397,9 +397,13 @@ c7.metric("📄 Con propuesta",    f"{prop_total:,}")
 _sdr_goals = goals.get("sdr", {})
 _cli_goals = goals.get("cliente", {})
 
-# Si hay filtro activo de SDR, usar solo la meta de ese SDR
+# Si hay filtro activo de SDR, usar solo la meta de ese SDR.
+# Si se filtra por cliente (sin SDR específico), sumar metas solo de los SDRs que trabajan ese cliente.
 if sel_sdr != "Todos":
     meta_sdr_total = get_meta_periodo(sel_sdr, _sdr_goals, months_in_period)
+elif sel_client != "Todos" and "sdr" in df.columns:
+    sdrs_del_cliente = df["sdr"].replace({"": pd.NA, "nan": pd.NA}).dropna().unique().tolist()
+    meta_sdr_total = sum(get_meta_periodo(sdr, _sdr_goals, months_in_period) for sdr in sdrs_del_cliente)
 else:
     meta_sdr_total = sum(get_meta_periodo(n, _sdr_goals, months_in_period) for n in _sdr_goals)
 
