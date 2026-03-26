@@ -36,9 +36,14 @@ const OUTPUT_HEADERS = [
   "Fecha de registro"
 ];
 
-// ── GET: retorna los datos de los desplegables ─────────────────────────────
+// ── GET: retorna los datos de los desplegables o reuniones por SDR ─────────
 function doGet(e) {
   try {
+    const action = (e && e.parameter && e.parameter.action) || "";
+    if (action === "getMeetings") {
+      const sdr = (e.parameter && e.parameter.sdr) || "";
+      return getMeetingsForSDR(sdr);
+    }
     const data = getMaestraData();
     return jsonResponse({ status: "ok", data: data });
   } catch (err) {
@@ -46,12 +51,16 @@ function doGet(e) {
   }
 }
 
-// ── POST: guarda la nueva reunión ─────────────────────────────────────────
+// ── POST: guarda nueva reunión o actualiza una existente ──────────────────
 function doPost(e) {
   try {
     const params = e.parameter;
-    saveReunion(params);
-    return jsonResponse({ status: "ok", message: "Reunión registrada exitosamente" });
+    if (params.action === "update") {
+      updateReunion(params);
+    } else {
+      saveReunion(params);
+    }
+    return jsonResponse({ status: "ok", message: "OK" });
   } catch (err) {
     return jsonResponse({ status: "error", message: err.toString() });
   }
@@ -170,6 +179,82 @@ function saveReunion(p) {
   const row = sheetHeaders.map(h => values[h.toString().trim()] ?? "");
 
   sheet.appendRow(row);
+}
+
+// ── Obtener reuniones pendientes para un SDR ──────────────────────────────
+function getMeetingsForSDR(sdrName) {
+  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(OUTPUT_TAB);
+  if (!sheet) return jsonResponse({ status: "ok", meetings: [] });
+
+  const all     = sheet.getDataRange().getValues();
+  if (all.length < 2) return jsonResponse({ status: "ok", meetings: [] });
+
+  const headers = all[0].map(h => h.toString().trim());
+  const col = (name) => headers.findIndex(h => h === name);
+
+  const colResponsable = col("Responsable");
+  const colRealizado   = col("Realizado");
+  const colEmpresa     = col("Empresa");
+  const colContacto    = col("Contactos/Correo");
+  const colCargo       = col("Cargo");
+  const colPais        = col("País");
+  const colFecha       = col("Fecha de la reunión");
+  const colHora        = col("Hora");
+  const colCliente     = col("Cliente");
+
+  const pendingValues = ["pendiente", "no", "reagendar", ""];
+
+  const meetings = [];
+  for (let i = 1; i < all.length; i++) {
+    const r           = all[i];
+    const responsable = colResponsable >= 0 ? r[colResponsable]?.toString().trim() : "";
+    const realizado   = colRealizado   >= 0 ? r[colRealizado]?.toString().trim()   : "";
+
+    if (responsable !== sdrName) continue;
+    if (!pendingValues.includes(realizado.toLowerCase())) continue;
+
+    meetings.push({
+      row:      i + 1,  // 1-indexed, row 1 = headers
+      empresa:  colEmpresa  >= 0 ? r[colEmpresa]?.toString().trim()  : "",
+      contacto: colContacto >= 0 ? r[colContacto]?.toString().trim() : "",
+      cargo:    colCargo    >= 0 ? r[colCargo]?.toString().trim()    : "",
+      pais:     colPais     >= 0 ? r[colPais]?.toString().trim()     : "",
+      fecha:    colFecha    >= 0 ? r[colFecha]?.toString().trim()    : "",
+      hora:     colHora     >= 0 ? r[colHora]?.toString().trim()     : "",
+      estado:   realizado,
+      cliente:  colCliente  >= 0 ? r[colCliente]?.toString().trim()  : "",
+    });
+  }
+
+  return jsonResponse({ status: "ok", meetings: meetings });
+}
+
+// ── Actualizar fecha y estado de una reunión existente ────────────────────
+function updateReunion(p) {
+  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(OUTPUT_TAB);
+  if (!sheet) throw new Error("No se encontró la pestaña '" + OUTPUT_TAB + "'");
+
+  const rowNum = parseInt(p.row, 10);
+  if (isNaN(rowNum) || rowNum < 2) throw new Error("Número de fila inválido: " + p.row);
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const colIndex = (name) => headers.findIndex(h => h.toString().trim() === name);
+
+  const colFecha     = colIndex("Fecha de la reunión");
+  const colRealizado = colIndex("Realizado");
+  const colComentario = colIndex("Comentario de la reunión");
+
+  if (colFecha >= 0 && p.fecha_reunion !== undefined) {
+    sheet.getRange(rowNum, colFecha + 1).setValue(p.fecha_reunion);
+  }
+  if (colRealizado >= 0 && p.realizado !== undefined) {
+    sheet.getRange(rowNum, colRealizado + 1).setValue(p.realizado);
+  }
+  if (colComentario >= 0 && p.comentario !== undefined && p.comentario !== "") {
+    sheet.getRange(rowNum, colComentario + 1).setValue(p.comentario);
+  }
 }
 
 // ── Helper: respuesta JSON ─────────────────────────────────────────────────

@@ -253,6 +253,70 @@
     .flatpickr-day.flatpickr-disabled, .flatpickr-day.flatpickr-disabled:hover { color: var(--muted) !important; }
     .numInput, .cur-year { color: var(--text) !important; }
     .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: var(--accent) !important; }
+
+    /* ── Mode selector ───────────────────────────────────────────────────── */
+    .mode-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 8px; }
+    @media (max-width: 580px) { .mode-selector { grid-template-columns: 1fr; } }
+    .mode-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 36px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, transform .15s, box-shadow .2s;
+      backdrop-filter: blur(12px);
+    }
+    .mode-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px rgba(0,212,255,.15);
+    }
+    .mode-card .mode-icon { font-size: 42px; margin-bottom: 16px; }
+    .mode-card .mode-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .mode-card .mode-desc { font-size: 13px; color: var(--muted); }
+    .back-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: var(--accent); font-size: 13px; font-weight: 500;
+      cursor: pointer; margin-bottom: 20px;
+      background: none; border: none; font-family: inherit;
+      padding: 0;
+    }
+    .back-link:hover { text-decoration: underline; }
+
+    /* ── Edit mode meeting cards ─────────────────────────────────────────── */
+    .meeting-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 24px;
+      margin-bottom: 14px;
+      backdrop-filter: blur(12px);
+      transition: border-color .2s;
+    }
+    .meeting-card.updated { border-color: var(--success); }
+    .meeting-meta { margin-bottom: 14px; }
+    .meeting-empresa { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .meeting-detail { font-size: 13px; color: var(--muted); }
+    .meeting-fields { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+    @media (max-width: 580px) { .meeting-fields { grid-template-columns: 1fr; } }
+    .btn-update {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #00d4ff 0%, #0095cc 100%);
+      color: #06071a; border: none; border-radius: var(--radius);
+      font-family: inherit; font-size: 13px; font-weight: 700;
+      cursor: pointer; white-space: nowrap;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .btn-update:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,212,255,.3); }
+    .btn-update:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+    .update-status { font-size: 12px; margin-top: 8px; }
+    .update-status.ok { color: var(--success); }
+    .update-status.fail { color: var(--error); }
+    .no-meetings {
+      text-align: center; padding: 48px 24px;
+      color: var(--muted); font-size: 14px;
+    }
   </style>
 </head>
 <body>
@@ -274,172 +338,209 @@
 
   <div class="fetch-status" id="fetch-status">⏳ Cargando opciones desde el sistema...</div>
 
-  <!-- ════════════════════════════════════════════════════════════════════ -->
-  <!--  FORMULARIO                                                         -->
-  <!-- ════════════════════════════════════════════════════════════════════ -->
-  <form id="form" novalidate>
-
-    <!-- ── 1. Información de la reunión ────────────────────────────────── -->
-    <div class="card">
-      <div class="card-title">📋 Información de la reunión</div>
-      <div class="grid-2">
-
-        <div class="field">
-          <label>Cliente <span class="req">*</span></label>
-          <select name="cliente" id="s-cliente" required>
-            <option value="">Selecciona un cliente...</option>
-          </select>
-          <span class="field-err">Requerido</span>
-        </div>
-
-        <div class="field">
-          <label>Origen <span class="req">*</span></label>
-          <select name="origen" id="s-origen" required>
-            <option value="">Selecciona el origen...</option>
-          </select>
-          <span class="field-err">Requerido</span>
-        </div>
-
-        <div class="field full">
-          <label>Responsable de la Reunión (SDR) <span class="req">*</span></label>
-          <select name="responsable" id="s-sdr" required>
-            <option value="">Selecciona el responsable...</option>
-          </select>
-          <span class="field-err">Requerido</span>
-        </div>
-
-        <div class="field">
-          <label>Fecha de Agendamiento <span class="req">*</span></label>
-          <input type="text" name="fecha_agendamiento" id="fp-agenda"
-                 placeholder="DD/MM/AAAA" readonly required />
-          <span class="field-err">Requerido</span>
-        </div>
-
-        <div class="field">
-          <label>Fecha de la Reunión <span class="req">*</span></label>
-          <input type="text" name="fecha_reunion" id="fp-reunion"
-                 placeholder="DD/MM/AAAA" readonly required />
-          <span class="field-err">Requerido</span>
-        </div>
-
-        <div class="field">
-          <label>Hora de la Reunión</label>
-          <select name="hora" id="s-hora">
-            <option value="">Sin especificar</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>Estado <span class="req">*</span></label>
-          <select name="realizado" id="s-realizado" required>
-            <option value="Pendiente" selected>⏳ Pendiente</option>
-            <option value="Si">✅ Sí (realizada)</option>
-            <option value="No">❌ No</option>
-            <option value="Reagendar">🔄 Reagendar</option>
-          </select>
-          <span class="field-err">Requerido</span>
-        </div>
-
+  <!-- ── Mode selector ────────────────────────────────────────────────────── -->
+  <div id="mode-selector-wrap">
+    <div class="mode-selector">
+      <div class="mode-card" onclick="setMode('new')">
+        <div class="mode-icon">📝</div>
+        <div class="mode-title">Nueva Reunión</div>
+        <div class="mode-desc">Registra una reunión que acabas de agendar</div>
+      </div>
+      <div class="mode-card" onclick="setMode('edit')">
+        <div class="mode-icon">✏️</div>
+        <div class="mode-title">Actualizar Reunión</div>
+        <div class="mode-desc">Cambia el estado o fecha de una reunión pendiente</div>
       </div>
     </div>
+  </div>
 
-    <!-- ── 2. Empresa y contacto ────────────────────────────────────────── -->
+  <!-- ── New meeting mode ─────────────────────────────────────────────────── -->
+  <div id="mode-new" style="display:none">
+    <button class="back-link" onclick="setMode(null)">← Volver</button>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!--  FORMULARIO                                                         -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <form id="form" novalidate>
+
+      <!-- ── 1. Información de la reunión ────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">📋 Información de la reunión</div>
+        <div class="grid-2">
+
+          <div class="field">
+            <label>Cliente <span class="req">*</span></label>
+            <select name="cliente" id="s-cliente" required>
+              <option value="">Selecciona un cliente...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Origen <span class="req">*</span></label>
+            <select name="origen" id="s-origen" required>
+              <option value="">Selecciona el origen...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field full">
+            <label>Responsable de la Reunión (SDR) <span class="req">*</span></label>
+            <select name="responsable" id="s-sdr" required>
+              <option value="">Selecciona el responsable...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Fecha de Agendamiento <span class="req">*</span></label>
+            <input type="text" name="fecha_agendamiento" id="fp-agenda"
+                   placeholder="DD/MM/AAAA" readonly required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Fecha de la Reunión <span class="req">*</span></label>
+            <input type="text" name="fecha_reunion" id="fp-reunion"
+                   placeholder="DD/MM/AAAA" readonly required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Hora de la Reunión</label>
+            <select name="hora" id="s-hora">
+              <option value="">Sin especificar</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Estado <span class="req">*</span></label>
+            <select name="realizado" id="s-realizado" required>
+              <option value="Pendiente" selected>⏳ Pendiente</option>
+              <option value="Si">✅ Sí (realizada)</option>
+              <option value="No">❌ No</option>
+              <option value="Reagendar">🔄 Reagendar</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── 2. Empresa y contacto ────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">🏢 Empresa y contacto</div>
+        <div class="grid-2">
+
+          <div class="field">
+            <label>Empresa <span class="req">*</span></label>
+            <input type="text" name="empresa" placeholder="Nombre de la empresa" required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Contacto / Nombre <span class="req">*</span></label>
+            <input type="text" name="contactos" placeholder="Nombre del contacto" required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Correo electrónico</label>
+            <input type="email" name="correo" placeholder="contacto@empresa.com" />
+          </div>
+
+          <div class="field">
+            <label>Teléfono</label>
+            <input type="tel" name="telefono" placeholder="+56 9 1234 5678" />
+          </div>
+
+          <div class="field">
+            <label>Cargo <span class="req">*</span></label>
+            <input type="text" name="cargo" placeholder="Ej: Gerente de Tecnología" required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>País <span class="req">*</span></label>
+            <select name="pais" id="s-pais" required>
+              <option value="">Selecciona el país...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field full">
+            <label>Industria <span class="req">*</span></label>
+            <select name="industria" id="s-industria" required>
+              <option value="">Selecciona la industria...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── 3. Seguimiento ───────────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">📊 Seguimiento</div>
+        <div class="grid-2">
+
+          <div class="field full">
+            <label>Sales Manager</label>
+            <div class="field-hint">Rellenar solo en caso de que corresponda</div>
+            <input type="text" name="sales_manager" placeholder="Nombre del Sales Manager" />
+          </div>
+
+          <div class="field full">
+            <label>Comentario de la Reunión</label>
+            <textarea name="comentario"
+              placeholder="Detalles relevantes, próximos pasos, acuerdos..."></textarea>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Submit ─────────────────────────────────────────────────────────── -->
+      <div class="submit-wrap">
+        <button type="submit" class="btn" id="btn">
+          <span class="spin" id="spin"></span>
+          <span id="btn-txt">🚀 Registrar Reunión</span>
+        </button>
+        <div class="toast" id="toast"></div>
+      </div>
+
+    </form>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!--  RESUMEN POST-ENVÍO                                                  -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <div class="card summary-card" id="summary-card">
+      <div class="summary-header">✅ ¡Reunión registrada!</div>
+      <p style="text-align:center; color:var(--muted); font-size:13px; margin-bottom:20px;">
+        Copia el resumen y compártelo por WhatsApp
+      </p>
+      <div class="summary-box" id="summary-box"></div>
+      <div class="btn-group">
+        <button class="btn-outline" onclick="copySummary()">📋 Copiar resumen</button>
+        <button class="btn-outline" onclick="resetForm()">➕ Registrar otra</button>
+      </div>
+      <div class="toast" id="toast-copy" style="margin-top:12px;"></div>
+    </div>
+
+  </div><!-- /mode-new -->
+
+  <!-- ── Edit mode ────────────────────────────────────────────────────────── -->
+  <div id="mode-edit" style="display:none">
+    <button class="back-link" onclick="setMode(null)">← Volver</button>
     <div class="card">
-      <div class="card-title">🏢 Empresa y contacto</div>
-      <div class="grid-2">
-
-        <div class="field">
-          <label>Empresa <span class="req">*</span></label>
-          <input type="text" name="empresa" placeholder="Nombre de la empresa" required />
-          <span class="field-err">Requerido</span>
-        </div>
-
-        <div class="field">
-          <label>Contacto / Nombre <span class="req">*</span></label>
-          <input type="text" name="contactos" placeholder="Nombre del contacto" required />
-          <span class="field-err">Requerido</span>
-        </div>
-
-        <div class="field">
-          <label>Correo electrónico</label>
-          <input type="email" name="correo" placeholder="contacto@empresa.com" />
-        </div>
-
-        <div class="field">
-          <label>Teléfono</label>
-          <input type="tel" name="telefono" placeholder="+56 9 1234 5678" />
-        </div>
-
-        <div class="field">
-          <label>Cargo <span class="req">*</span></label>
-          <input type="text" name="cargo" placeholder="Ej: Gerente de Tecnología" required />
-          <span class="field-err">Requerido</span>
-        </div>
-
-        <div class="field">
-          <label>País <span class="req">*</span></label>
-          <select name="pais" id="s-pais" required>
-            <option value="">Selecciona el país...</option>
-          </select>
-          <span class="field-err">Requerido</span>
-        </div>
-
-        <div class="field full">
-          <label>Industria <span class="req">*</span></label>
-          <select name="industria" id="s-industria" required>
-            <option value="">Selecciona la industria...</option>
-          </select>
-          <span class="field-err">Requerido</span>
-        </div>
-
+      <div class="card-title">✏️ Actualizar reunión existente</div>
+      <div class="field">
+        <label>Responsable (SDR)</label>
+        <select id="edit-sdr-select">
+          <option value="">Selecciona el SDR...</option>
+        </select>
       </div>
     </div>
-
-    <!-- ── 3. Seguimiento ───────────────────────────────────────────────── -->
-    <div class="card">
-      <div class="card-title">📊 Seguimiento</div>
-      <div class="grid-2">
-
-        <div class="field full">
-          <label>Sales Manager</label>
-          <div class="field-hint">Rellenar solo en caso de que corresponda</div>
-          <input type="text" name="sales_manager" placeholder="Nombre del Sales Manager" />
-        </div>
-
-        <div class="field full">
-          <label>Comentario de la Reunión</label>
-          <textarea name="comentario"
-            placeholder="Detalles relevantes, próximos pasos, acuerdos..."></textarea>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- ── Submit ─────────────────────────────────────────────────────────── -->
-    <div class="submit-wrap">
-      <button type="submit" class="btn" id="btn">
-        <span class="spin" id="spin"></span>
-        <span id="btn-txt">🚀 Registrar Reunión</span>
-      </button>
-      <div class="toast" id="toast"></div>
-    </div>
-
-  </form>
-
-  <!-- ════════════════════════════════════════════════════════════════════ -->
-  <!--  RESUMEN POST-ENVÍO                                                  -->
-  <!-- ════════════════════════════════════════════════════════════════════ -->
-  <div class="card summary-card" id="summary-card">
-    <div class="summary-header">✅ ¡Reunión registrada!</div>
-    <p style="text-align:center; color:var(--muted); font-size:13px; margin-bottom:20px;">
-      Copia el resumen y compártelo por WhatsApp
-    </p>
-    <div class="summary-box" id="summary-box"></div>
-    <div class="btn-group">
-      <button class="btn-outline" onclick="copySummary()">📋 Copiar resumen</button>
-      <button class="btn-outline" onclick="resetForm()">➕ Registrar otra</button>
-    </div>
-    <div class="toast" id="toast-copy" style="margin-top:12px;"></div>
+    <div id="meetings-list"></div>
   </div>
 
 </div><!-- /container -->
@@ -469,6 +570,14 @@ document.addEventListener("DOMContentLoaded", () => {
     loadDropdowns();
   }
 });
+
+// ── Modo de la app ─────────────────────────────────────────────────────────
+function setMode(mode) {
+  document.getElementById("mode-selector-wrap").style.display = mode ? "none" : "block";
+  document.getElementById("mode-new").style.display  = mode === "new"  ? "block" : "none";
+  document.getElementById("mode-edit").style.display = mode === "edit" ? "block" : "none";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 
 // ── Date pickers ─────────────────────────────────────────────────────────
 function initDatePickers() {
@@ -510,13 +619,25 @@ async function loadDropdowns() {
     const res  = await fetch(SCRIPT_URL);
     const json = await res.json();
     if (json.status === "ok") {
-      fill("s-cliente",   json.data.clientes);
-      fill("s-sdr",       json.data.sdrs);
-      fill("s-origen",    json.data.origenes);
-      fill("s-pais",      json.data.paises);
-      fill("s-industria", json.data.industrias, true); // true = agregar "Otra" al final
+      fill("s-cliente",        json.data.clientes);
+      fill("s-sdr",            json.data.sdrs);
+      fill("s-origen",         json.data.origenes);
+      fill("s-pais",           json.data.paises);
+      fill("s-industria",      json.data.industrias, true); // true = agregar "Otra" al final
+      fill("edit-sdr-select",  json.data.sdrs);
       // Inicializar Tom Select en los searchables DESPUÉS de llenar
       SEARCHABLE_SELECTS.forEach(id => initTomSelect(id));
+      // Tom Select para el selector de SDR en modo edición
+      if (tomInstances["edit-sdr-select"]) {
+        tomInstances["edit-sdr-select"].destroy();
+        delete tomInstances["edit-sdr-select"];
+      }
+      tomInstances["edit-sdr-select"] = new TomSelect("#edit-sdr-select", {
+        allowEmptyOption: true,
+        maxOptions: null,
+        dropdownParent: 'body',
+        onChange: (val) => loadMeetings(val),
+      });
     } else {
       showToast("toast", "fail", "⚠️ Error al cargar opciones: " + json.message);
     }
@@ -672,6 +793,113 @@ function validate() {
 document.addEventListener("change", e => {
   e.target.closest?.(".field")?.classList.remove("err");
 });
+
+// ── Edit: cargar reuniones del SDR seleccionado ────────────────────────────
+async function loadMeetings(sdrName) {
+  if (!sdrName) {
+    document.getElementById("meetings-list").innerHTML = "";
+    return;
+  }
+  const list = document.getElementById("meetings-list");
+  list.innerHTML = '<div class="no-meetings">⏳ Cargando reuniones...</div>';
+  try {
+    const res  = await fetch(`${SCRIPT_URL}?action=getMeetings&sdr=${encodeURIComponent(sdrName)}`);
+    const json = await res.json();
+    if (json.status === "ok") {
+      renderMeetings(json.meetings);
+    } else {
+      list.innerHTML = '<div class="no-meetings">⚠️ Error al cargar reuniones.</div>';
+    }
+  } catch(e) {
+    list.innerHTML = '<div class="no-meetings">⚠️ Error de conexión.</div>';
+  }
+}
+
+function renderMeetings(meetings) {
+  const list = document.getElementById("meetings-list");
+  if (!meetings.length) {
+    list.innerHTML = '<div class="no-meetings">✅ Este SDR no tiene reuniones pendientes.</div>';
+    return;
+  }
+  list.innerHTML = meetings.map((m, i) => `
+    <div class="meeting-card" id="mc-${i}">
+      <div class="meeting-meta">
+        <div class="meeting-empresa">${m.empresa || "Sin empresa"}</div>
+        <div class="meeting-detail">
+          👤 ${m.contacto || "-"}${m.cargo ? " · " + m.cargo : ""}${m.pais ? " · 🌎 " + m.pais : ""}
+        </div>
+        <div class="meeting-detail" style="margin-top:4px">🏷️ ${m.cliente || "-"}</div>
+      </div>
+      <div class="meeting-fields">
+        <div class="field">
+          <label>Fecha de la reunión</label>
+          <input type="text" id="fp-edit-${i}" value="${m.fecha || ""}"
+                 placeholder="DD/MM/AAAA" readonly
+                 style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;" />
+        </div>
+        <div class="field">
+          <label>Estado</label>
+          <select id="est-${i}" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;appearance:none;">
+            <option value="Pendiente"  ${m.estado==="Pendiente"  ? "selected":""}>⏳ Pendiente</option>
+            <option value="Si"         ${m.estado==="Si"||m.estado==="Sí" ? "selected":""}>✅ Realizada</option>
+            <option value="No"         ${m.estado==="No"         ? "selected":""}>❌ No realizada</option>
+            <option value="Reagendar"  ${m.estado==="Reagendar"  ? "selected":""}>🔄 Reagendar</option>
+          </select>
+        </div>
+        <div>
+          <button class="btn-update" onclick="updateMeeting(${i}, ${m.row})" id="upd-${i}">
+            Actualizar ✓
+          </button>
+        </div>
+      </div>
+      <div class="update-status" id="ust-${i}"></div>
+    </div>
+  `).join("");
+
+  // Init flatpickr on each date input
+  meetings.forEach((m, i) => {
+    flatpickr(`#fp-edit-${i}`, {
+      locale: "es",
+      dateFormat: "d/m/Y",
+      disableMobile: true,
+      defaultDate: m.fecha || null,
+    });
+  });
+}
+
+async function updateMeeting(idx, rowNum) {
+  const btn    = document.getElementById(`upd-${idx}`);
+  const status = document.getElementById(`ust-${idx}`);
+  const fecha  = document.getElementById(`fp-edit-${idx}`).value;
+  const estado = document.getElementById(`est-${idx}`).value;
+
+  btn.disabled = true;
+  btn.textContent = "Guardando...";
+  status.textContent = "";
+  status.className = "update-status";
+
+  try {
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      body: new URLSearchParams({
+        action: "update",
+        row: rowNum,
+        fecha_reunion: fecha,
+        realizado: estado,
+      })
+    });
+    status.textContent = "✅ Actualizado correctamente";
+    status.className = "update-status ok";
+    document.getElementById(`mc-${idx}`).classList.add("updated");
+    btn.textContent = "✓ Guardado";
+  } catch(e) {
+    status.textContent = "❌ Error al actualizar";
+    status.className = "update-status fail";
+    btn.disabled = false;
+    btn.textContent = "Actualizar ✓";
+  }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function showToast(toastId, type, msg) {
