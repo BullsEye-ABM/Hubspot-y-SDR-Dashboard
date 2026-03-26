@@ -47,6 +47,18 @@ with st.expander("🔍 Debug SDR (temporal)", expanded=False):
         else:
             st.success("✅ Todos los SDRs tienen nombre")
 
+        # Diagnóstico de llamadas vacías
+        df_vacias = df_all[df_all["sdr"].str.strip() == ""]
+        if not df_vacias.empty and "telefono_raw" in df_vacias.columns:
+            st.write(f"**Llamadas sin SDR: {len(df_vacias)}**")
+            sin_tel = df_vacias["telefono_raw"].str.strip().eq("").sum()
+            con_tel = len(df_vacias) - sin_tel
+            st.write(f"→ Sin teléfono (telefono_raw vacío): {sin_tel}")
+            st.write(f"→ Con teléfono pero sin match: {con_tel}")
+            if con_tel > 0:
+                st.write("**Muestra de teléfonos sin match (primeros 10):**",
+                         df_vacias[df_vacias["telefono_raw"].str.strip() != ""]["telefono_raw"].head(10).tolist())
+
 # ── Filtros sidebar ───────────────────────
 with st.sidebar:
     sel_account = st.selectbox("Cuenta", ["Todas"] + account_names)
