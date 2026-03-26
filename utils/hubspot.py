@@ -329,7 +329,7 @@ def get_calls(token: str, account_name: str, client_name: str = "", days: int = 
             "id":           r["id"],
             "account":      account_name,
             "fecha":        pd.to_datetime(p.get("hs_timestamp"), utc=True, errors="coerce"),
-            "sdr":          _owner_name(owners, p.get("hubspot_owner_id")),
+            "sdr":          "",   # se rellena desde propiedades del contacto
             "estado":       p.get("hs_call_status", ""),
             "disposicion":  p.get("hs_call_disposition", ""),
             "duracion_seg": duration_sec,
