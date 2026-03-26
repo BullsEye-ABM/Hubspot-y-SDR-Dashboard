@@ -442,7 +442,7 @@ tab_periodo, tab_sdr, tab_cliente, tab_analisis, tab_metas, tab_detalle = st.tab
 # TAB 1 — Por Período
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_periodo:
-    st.subheader("Evolución mensual de reuniones")
+    st.subheader("Evolución últimos 6 meses")
 
     mes_col = "mes_agenda" if "mes_agenda" in df.columns and df["mes_agenda"].ne("").any() else "mes"
 
@@ -453,10 +453,11 @@ with tab_periodo:
             .sort_values("Mes")
         )
 
-        # Calcular tasa numérica para la línea
+        # Calcular tasa numérica para la línea (usar NaN en vez de None para Plotly)
+        import math
         monthly["_tasa_num"] = monthly.apply(
             lambda r: round(r["Realizadas"] / r["Agendadas"] * 100, 1)
-            if r["Agendadas"] > 0 else None,
+            if r["Agendadas"] > 0 else float("nan"),
             axis=1,
         )
 
@@ -484,7 +485,6 @@ with tab_periodo:
             text=monthly["Agendadas"],
             textposition="outside",
             textfont=dict(size=13, color="#2d7d9a", family="Inter, sans-serif"),
-            cliponaxis=False,
         )
 
         # Barra: Realizadas (superpuesta, más opaca)
@@ -495,13 +495,12 @@ with tab_periodo:
             marker=dict(color="rgba(69,123,157,0.90)", line=dict(color="#2d6a8f", width=1)),
             text=monthly["Realizadas"],
             textposition="inside",
-            insidetextanchor="middle",
             textfont=dict(size=12, color="white", family="Inter, sans-serif"),
         )
 
         # Línea: Tasa de realización (eje derecho)
         tasa_text = [
-            f"{t:.0f}%" if t is not None else ""
+            f"{t:.0f}%" if (t == t and t is not None) else ""   # t == t descarta NaN
             for t in monthly["_tasa_num"]
         ]
         fig.add_scatter(
@@ -535,7 +534,8 @@ with tab_periodo:
                 title="Reuniones",
                 gridcolor="rgba(0,0,0,0.06)",
                 zeroline=False,
-                range=[0, max_ag * 1.30],   # espacio para labels "outside"
+                range=[0, max_ag * 1.35],   # espacio para labels "outside"
+                cliponaxis=False,
             ),
             yaxis2=dict(
                 title="Tasa realización %",
