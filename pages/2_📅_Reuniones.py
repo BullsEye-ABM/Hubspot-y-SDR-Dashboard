@@ -979,69 +979,72 @@ with tab_metas:
     this_month_end   = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
     ideal_mes_actual = calculate_ideal_pct(this_month_start, this_month_end, today)
 
-    df_mes     = df_raw.copy()
-    fecha_c    = "fecha_agendamiento" if "fecha_agendamiento" in df_mes.columns else "fecha"
-    if fecha_c in df_mes.columns:
-        df_mes = df_mes[df_mes[fecha_c].notna()]
-        df_mes = df_mes[
-            (df_mes[fecha_c].dt.date >= this_month_start) &
-            (df_mes[fecha_c].dt.date <= today)
-        ]
+    df_mes = df_raw.copy()
+    # Fecha efectiva del mes: usa fecha_agendamiento; si falta, cae en fecha_reunion
+    if "fecha_agendamiento" in df_mes.columns:
+        _fecha_mes = df_mes["fecha_agendamiento"]
+        if "fecha_reunion" in df_mes.columns:
+            _fecha_mes = _fecha_mes.fillna(df_mes["fecha_reunion"])
+    elif "fecha_reunion" in df_mes.columns:
+        _fecha_mes = df_mes["fecha_reunion"]
+    else:
+        _fecha_mes = pd.Series(dtype="datetime64[ns]", index=df_mes.index)
+    df_mes = df_mes[_fecha_mes.notna()]
+    df_mes = df_mes[
+        (_fecha_mes[df_mes.index].dt.date >= this_month_start) &
+        (_fecha_mes[df_mes.index].dt.date <= this_month_end)
+    ]
 
-    col_a, col_b = st.columns(2)
+    st.markdown("**Por SDR**")
+    sdr_goals_mes = goals.get("sdr", {})
+    if "sdr" in df_mes.columns and sdr_goals_mes:
+        rows_sdr = []
+        for sdr_name in active_sdrs or sorted(df_mes["sdr"].dropna().unique()):
+            ag   = int((df_mes["sdr"] == sdr_name).sum())
+            re   = int(((df_mes["sdr"] == sdr_name) & (df_mes["estado"] == "Realizada")).sum())
+            meta = int(sdr_goals_mes.get(sdr_name, {}).get(this_month_key, 0)) if isinstance(sdr_goals_mes.get(sdr_name), dict) else 0
+            rows_sdr.append({
+                "SDR":          sdr_name,
+                "Agendadas":    ag,
+                "Realizadas":   re,
+                "Meta mes":     meta,
+                "% Agendadas":  f"{round(ag/meta*100,1)}%" if meta > 0 else "—",
+                "% Realizadas": f"{round(re/meta*100,1)}%" if meta > 0 else "—",
+                "% Ideal hoy":  f"{ideal_mes_actual}%"     if meta > 0 else "—",
+            })
+        if rows_sdr:
+            st.dataframe(
+                pd.DataFrame(rows_sdr).sort_values("Agendadas", ascending=False),
+                use_container_width=True, hide_index=True,
+            )
+    else:
+        st.info("Configura metas de SDR arriba para ver el cumplimiento.")
 
-    with col_a:
-        st.markdown(f"**Por SDR**")
-        sdr_goals_mes = goals.get("sdr", {})
-        if "sdr" in df_mes.columns and sdr_goals_mes:
-            rows_sdr = []
-            for sdr_name in active_sdrs or sorted(df_mes["sdr"].dropna().unique()):
-                ag   = int((df_mes["sdr"] == sdr_name).sum())
-                re   = int(((df_mes["sdr"] == sdr_name) & (df_mes["estado"] == "Realizada")).sum())
-                meta = int(sdr_goals_mes.get(sdr_name, {}).get(this_month_key, 0)) if isinstance(sdr_goals_mes.get(sdr_name), dict) else 0
-                rows_sdr.append({
-                    "SDR":          sdr_name,
-                    "Agendadas":    ag,
-                    "Realizadas":   re,
-                    "Meta mes":     meta,
-                    "% Agendadas":  f"{round(ag/meta*100,1)}%" if meta > 0 else "—",
-                    "% Realizadas": f"{round(re/meta*100,1)}%" if meta > 0 else "—",
-                    "% Ideal hoy":  f"{ideal_mes_actual}%"     if meta > 0 else "—",
-                })
-            if rows_sdr:
-                st.dataframe(
-                    pd.DataFrame(rows_sdr).sort_values("Agendadas", ascending=False),
-                    use_container_width=True, hide_index=True,
-                )
-        else:
-            st.info("Configura metas de SDR arriba para ver el cumplimiento.")
-
-    with col_b:
-        st.markdown(f"**Por Cliente**")
-        cli_goals_mes = goals.get("cliente", {})
-        if "cliente" in df_mes.columns and cli_goals_mes:
-            df_mes_cli = df_mes[df_mes["cliente"].replace({"": pd.NA, "nan": pd.NA}).notna()]
-            rows_cli = []
-            for cli_name in active_clientes or sorted(df_mes_cli["cliente"].dropna().unique()):
-                ag   = int((df_mes_cli["cliente"] == cli_name).sum())
-                re   = int(((df_mes_cli["cliente"] == cli_name) & (df_mes_cli["estado"] == "Realizada")).sum())
-                meta = int(cli_goals_mes.get(cli_name, {}).get(this_month_key, 0)) if isinstance(cli_goals_mes.get(cli_name), dict) else 0
-                rows_cli.append({
-                    "Cliente":      cli_name,
-                    "Agendadas":    ag,
-                    "Realizadas":   re,
-                    "Meta mes":     meta,
-                    "% Agendadas":  f"{round(ag/meta*100,1)}%" if meta > 0 else "—",
-                    "% Realizadas": f"{round(re/meta*100,1)}%" if meta > 0 else "—",
-                    "% Ideal hoy":  f"{ideal_mes_actual}%"     if meta > 0 else "—",
-                })
-            if rows_cli:
-                st.dataframe(
-                    pd.DataFrame(rows_cli).sort_values("Agendadas", ascending=False),
-                    use_container_width=True, hide_index=True,
-                )
-        else:
-            st.info("Configura metas de clientes arriba para ver el cumplimiento.")
+    st.markdown("**Por Cliente**")
+    cli_goals_mes = goals.get("cliente", {})
+    if "cliente" in df_mes.columns and cli_goals_mes:
+        df_mes_cli = df_mes[df_mes["cliente"].replace({"": pd.NA, "nan": pd.NA}).notna()]
+        rows_cli = []
+        for cli_name in active_clientes or sorted(df_mes_cli["cliente"].dropna().unique()):
+            ag   = int((df_mes_cli["cliente"] == cli_name).sum())
+            re   = int(((df_mes_cli["cliente"] == cli_name) & (df_mes_cli["estado"] == "Realizada")).sum())
+            meta = int(cli_goals_mes.get(cli_name, {}).get(this_month_key, 0)) if isinstance(cli_goals_mes.get(cli_name), dict) else 0
+            rows_cli.append({
+                "Cliente":      cli_name,
+                "Agendadas":    ag,
+                "Realizadas":   re,
+                "Meta mes":     meta,
+                "% Agendadas":  f"{round(ag/meta*100,1)}%" if meta > 0 else "—",
+                "% Realizadas": f"{round(re/meta*100,1)}%" if meta > 0 else "—",
+                "% Ideal hoy":  f"{ideal_mes_actual}%"     if meta > 0 else "—",
+            })
+        if rows_cli:
+            st.dataframe(
+                pd.DataFrame(rows_cli).sort_values("Agendadas", ascending=False),
+                use_container_width=True, hide_index=True,
+            )
+    else:
+        st.info("Configura metas de clientes arriba para ver el cumplimiento.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
