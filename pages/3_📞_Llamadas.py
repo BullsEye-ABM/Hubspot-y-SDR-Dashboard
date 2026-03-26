@@ -4,24 +4,67 @@ Métricas de llamadas realizadas, conectadas, duración promedio
 y transcripciones de las mejores llamadas.
 """
 
+import calendar
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import date, timedelta
 
 from utils.hubspot import load_all_accounts
 
 st.set_page_config(page_title="Llamadas", page_icon="📞", layout="wide")
 
+today = date.today()
+
+_PRESET_OPTS = [
+    "Este mes", "Mes pasado", "Últimos 3 meses", "Últimos 6 meses",
+    "Este año", "Año pasado", "Últimos 12 meses", "Personalizado",
+]
+_PRESET_DAYS = {
+    "Este mes": 60, "Mes pasado": 60, "Últimos 3 meses": 90,
+    "Últimos 6 meses": 180, "Este año": 365, "Año pasado": 730,
+    "Últimos 12 meses": 365, "Personalizado": 730,
+}
+
+def _period_dates(preset: str):
+    t = today
+    if preset == "Este mes":
+        last_day = calendar.monthrange(t.year, t.month)[1]
+        return date(t.year, t.month, 1), date(t.year, t.month, last_day)
+    elif preset == "Mes pasado":
+        first = date(t.year, t.month, 1)
+        last  = first - timedelta(days=1)
+        return date(last.year, last.month, 1), last
+    elif preset == "Últimos 3 meses":
+        return t - timedelta(days=90), t
+    elif preset == "Últimos 6 meses":
+        return t - timedelta(days=180), t
+    elif preset == "Este año":
+        return date(t.year, 1, 1), t
+    elif preset == "Año pasado":
+        return date(t.year - 1, 1, 1), date(t.year - 1, 12, 31)
+    elif preset == "Últimos 12 meses":
+        return t - timedelta(days=365), t
+    else:
+        return t - timedelta(days=180), t
+
 # ── Sidebar ──────────────────────────────
 with st.sidebar:
     st.markdown("## 🎯 Bullseye Dashboard")
     st.divider()
-    days = st.selectbox("Período", [7, 14, 30, 60, 90, 180], index=2,
-                        format_func=lambda x: f"Últimos {x} días")
-    if st.button("🔄 Actualizar", use_container_width=True):
+    if st.button("🔄 Actualizar datos", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+    st.markdown("### 🔍 Filtros")
+    preset = st.selectbox("Período", _PRESET_OPTS, index=3)  # default: Últimos 6 meses
+    days = _PRESET_DAYS.get(preset, 180)
+
+    if preset == "Personalizado":
+        dr = st.date_input("Rango de fechas", value=(today - timedelta(days=180), today))
+        start_date, end_date = (dr[0], dr[1]) if len(dr) == 2 else (today - timedelta(days=180), today)
+    else:
+        start_date, end_date = _period_dates(preset)
 
 # ── Carga de datos ────────────────────────
 with st.spinner("Cargando llamadas..."):
@@ -32,6 +75,12 @@ with st.spinner("Cargando llamadas..."):
     except Exception as e:
         st.error(f"Error: {e}")
         st.stop()
+
+# ── Filtrar por fecha ─────────────────────
+if not df_all.empty and "fecha" in df_all.columns:
+    _fecha = df_all["fecha"].dt.tz_localize(None).dt.date if df_all["fecha"].dt.tz is not None \
+             else df_all["fecha"].dt.date
+    df_all = df_all[(_fecha >= start_date) & (_fecha <= end_date)]
 
 # ── DEBUG temporal ───────────────────────
 with st.expander("🔍 Debug SDR (temporal)", expanded=False):
@@ -61,10 +110,13 @@ with st.expander("🔍 Debug SDR (temporal)", expanded=False):
 
 # ── Filtros sidebar ───────────────────────
 with st.sidebar:
+    st.divider()
     sel_account = st.selectbox("Cuenta", ["Todas"] + account_names)
-    sdrs = ["Todos"] + (sorted(df_all["sdr"].dropna().unique().tolist()) if not df_all.empty else [])
-    sel_sdr = st.selectbox("SDR", sdrs)
+    sdrs_list = ["Todos"] + sorted([s for s in df_all["sdr"].dropna().unique() if str(s).strip()])  if not df_all.empty else ["Todos"]
+    sel_sdr = st.selectbox("SDR", sdrs_list)
     only_connected = st.checkbox("Solo llamadas conectadas", value=False)
+    periodo_str = f"{start_date.strftime('%d/%m/%Y')} → {end_date.strftime('%d/%m/%Y')}"
+    st.caption(f"Período: **{periodo_str}**")
 
 # ── Aplicar filtros ───────────────────────
 df = df_all.copy()
