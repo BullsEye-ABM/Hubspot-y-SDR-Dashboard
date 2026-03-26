@@ -136,17 +136,17 @@ def _owner_name(owners: dict, owner_id) -> str:
 #  SDR por propiedad de contacto
 # ─────────────────────────────────────────
 
-def _get_sdr_property_for_client(token: str, client_name: str) -> str:
+def _get_all_sdr_properties(token: str) -> list:
     """
-    Busca el nombre interno de la propiedad 'SDR Asignado - [ClienteName]'
-    en los contactos de HubSpot.
-    Ej: 'SDR Asignado - Lemu' → 'sdr_asignado___lemu' (varía por cuenta).
+    Devuelve los nombres internos de TODAS las propiedades de contacto
+    cuya etiqueta contenga 'SDR Asignado' (ej: SDR Asignado - Lemu,
+    SDR Asignado - Sovos, SDR Asignado - BullsEye, etc.).
     """
-    cache_key = f"{token}:{client_name}"
+    cache_key = f"{token}:__all_sdr_props__"
     if cache_key in _prop_name_cache:
         return _prop_name_cache[cache_key]
 
-    prop_name = ""
+    props = []
     try:
         resp = requests.get(
             "https://api.hubapi.com/crm/v3/properties/contacts",
@@ -155,31 +155,37 @@ def _get_sdr_property_for_client(token: str, client_name: str) -> str:
         )
         if resp.status_code == 200:
             for prop in resp.json().get("results", []):
-                label = prop.get("label", "")
-                # Buscar propiedades que contengan "SDR Asignado" y el nombre del cliente
-                if "SDR Asignado" in label and client_name.lower() in label.lower():
-                    prop_name = prop["name"]
-                    break
+                if "SDR Asignado" in prop.get("label", ""):
+                    props.append(prop["name"])
     except Exception:
         pass
 
-    _prop_name_cache[cache_key] = prop_name
-    return prop_name
+    _prop_name_cache[cache_key] = props
+    return props
+
+
+def _sdr_from_contact_props(props_dict: dict, sdr_prop_names: list) -> str:
+    """Devuelve el primer valor no vacío entre las propiedades SDR del contacto."""
+    for p in sdr_prop_names:
+        val = (props_dict.get(p) or "").strip()
+        if val:
+            return val
+    return ""
 
 
 def _enrich_calls_with_sdr(token: str, df: pd.DataFrame, client_name: str) -> pd.DataFrame:
     """
     Enriquece las llamadas con el nombre real del SDR usando dos estrategias:
 
-    1. Asociaciones call → contacto (funciona cuando HubSpot tiene el link creado)
-    2. Fallback por número de teléfono: busca contactos donde la propiedad
-       'SDR Asignado - [Cliente]' esté rellena y empareja por teléfono.
+    1. Asociaciones call → contacto en HubSpot.
+    2. Fallback por número de teléfono: busca contactos que tengan
+       CUALQUIER propiedad 'SDR Asignado - *' rellena y empareja por teléfono.
     """
-    if df.empty or not client_name:
+    if df.empty:
         return df
 
-    prop_name = _get_sdr_property_for_client(token, client_name)
-    if not prop_name:
+    sdr_props = _get_all_sdr_properties(token)
+    if not sdr_props:
         return df
 
     df = df.copy()
@@ -217,12 +223,12 @@ def _enrich_calls_with_sdr(token: str, df: pd.DataFrame, client_name: str) -> pd
                     "https://api.hubapi.com/crm/v3/objects/contacts/batch/read",
                     headers=_headers(token),
                     json={"inputs": [{"id": cid} for cid in batch],
-                          "properties": [prop_name]},
+                          "properties": sdr_props},
                     timeout=30,
                 )
                 if resp.status_code == 200:
                     for c in resp.json().get("results", []):
-                        sdr = (c.get("properties", {}).get(prop_name) or "").strip()
+                        sdr = _sdr_from_contact_props(c.get("properties", {}), sdr_props)
                         if sdr:
                             contact_to_sdr[str(c["id"])] = sdr
             except Exception:
@@ -235,48 +241,54 @@ def _enrich_calls_with_sdr(token: str, df: pd.DataFrame, client_name: str) -> pd
         df["sdr"] = enriched.where(enriched.notna() & (enriched != ""), df["sdr"])
 
     # ── Estrategia 2: Fallback por número de teléfono ─────────────────────────
-    # Solo para llamadas que aún tienen un ID numérico (no resuelto)
-    unresolved = df["sdr"].str.match(r"^\d+$", na=False)
+    # Solo para llamadas que aún tienen un valor que parece ID numérico
+    unresolved = df["sdr"].str.match(r"^\d+$", na=False) | df["sdr"].str.strip().eq("")
     if not unresolved.any():
         return df
 
-    # Cargar todos los contactos donde prop_name está relleno
+    # Buscar contactos con CUALQUIER propiedad SDR rellena (OR entre filter groups)
+    # HubSpot permite hasta 10 filter groups por request; partimos en lotes si hay más
     phone_to_sdr: dict = {}
-    after = ""
-    while True:
-        try:
-            body: dict = {
-                "filterGroups": [{"filters": [{
-                    "propertyName": prop_name,
-                    "operator": "HAS_PROPERTY",
-                }]}],
-                "properties": ["phone", "mobilephone", prop_name],
-                "limit": 100,
-            }
-            if after:
-                body["after"] = after
-            resp = requests.post(
-                "https://api.hubapi.com/crm/v3/objects/contacts/search",
-                headers=_headers(token),
-                json=body,
-                timeout=30,
-            )
-            if resp.status_code != 200:
+    HUBSPOT_MAX_FG = 10
+    prop_batches = [sdr_props[i:i+HUBSPOT_MAX_FG]
+                    for i in range(0, len(sdr_props), HUBSPOT_MAX_FG)]
+
+    for prop_batch in prop_batches:
+        after = ""
+        while True:
+            try:
+                body: dict = {
+                    "filterGroups": [
+                        {"filters": [{"propertyName": p, "operator": "HAS_PROPERTY"}]}
+                        for p in prop_batch
+                    ],
+                    "properties": ["phone", "mobilephone"] + prop_batch,
+                    "limit": 100,
+                }
+                if after:
+                    body["after"] = after
+                resp = requests.post(
+                    "https://api.hubapi.com/crm/v3/objects/contacts/search",
+                    headers=_headers(token),
+                    json=body,
+                    timeout=30,
+                )
+                if resp.status_code != 200:
+                    break
+                data = resp.json()
+                for c in data.get("results", []):
+                    sdr = _sdr_from_contact_props(c.get("properties", {}), prop_batch)
+                    if not sdr:
+                        continue
+                    for field in ("phone", "mobilephone"):
+                        norm = _normalize_phone(c.get("properties", {}).get(field))
+                        if norm and norm not in phone_to_sdr:
+                            phone_to_sdr[norm] = sdr
+                after = (data.get("paging", {}).get("next", {}) or {}).get("after", "")
+                if not after or not data.get("results"):
+                    break
+            except Exception:
                 break
-            data = resp.json()
-            for c in data.get("results", []):
-                sdr = (c.get("properties", {}).get(prop_name) or "").strip()
-                if not sdr:
-                    continue
-                for field in ("phone", "mobilephone"):
-                    norm = _normalize_phone(c.get("properties", {}).get(field))
-                    if norm:
-                        phone_to_sdr[norm] = sdr
-            after = (data.get("paging", {}).get("next", {}) or {}).get("after", "")
-            if not after or not data.get("results"):
-                break
-        except Exception:
-            break
 
     if phone_to_sdr:
         def _resolve(row):
@@ -340,8 +352,10 @@ def get_calls(token: str, account_name: str, client_name: str = "", days: int = 
     df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
     df["conectada"]   = df["estado"].str.upper() == "COMPLETED"
 
-    # Enriquecer con SDR real desde propiedad del contacto asociado
+    # Enriquecer con SDR real desde propiedades de contacto (todas las 'SDR Asignado - *')
     df = _enrich_calls_with_sdr(token, df, client_name)
+    # Limpiar sdr: si sigue siendo un ID numérico, dejarlo vacío
+    df["sdr"] = df["sdr"].apply(lambda x: "" if str(x).strip().isdigit() else x)
     return df
 
 
