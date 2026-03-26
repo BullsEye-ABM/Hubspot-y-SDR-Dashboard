@@ -287,9 +287,13 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         df["hora_num"] = pd.NA
 
     # ── Limpiar strings clave ──────────────────────────────────────────────────
-    for col in ["sdr", "ejecutivo", "kam", "cliente", "empresa", "cargo", "pais"]:
+    for col in ["sdr", "ejecutivo", "kam", "cliente", "empresa", "cargo"]:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
+
+    # País: normalizar a Title Case para homologar "chile" / "CHILE" / "Chile"
+    if "pais" in df.columns:
+        df["pais"] = df["pais"].astype(str).str.strip().str.title()
 
     # Normalizar "realizado" → booleano
     if "realizado" in df.columns:
