@@ -714,30 +714,43 @@ with tab_analisis:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    col_l, col_r = st.columns(2)
+    # ── Asegurar que dia_semana esté completo (usa la misma fecha efectiva del filtro)
+    df_dia = df.copy()
+    _fecha_ef = None
+    if fecha_col in df_dia.columns:
+        _fecha_ef = df_dia[fecha_col]
+        if "fecha_agendamiento" in df_dia.columns:
+            _fecha_ef = _fecha_ef.fillna(df_dia["fecha_agendamiento"])
+    elif "fecha_agendamiento" in df_dia.columns:
+        _fecha_ef = df_dia["fecha_agendamiento"]
 
-    if "dia_semana" in df.columns:
+    if _fecha_ef is not None:
+        if "dia_semana" not in df_dia.columns:
+            df_dia["dia_semana"] = _fecha_ef.dt.day_name()
+        else:
+            _mask = df_dia["dia_semana"].isna() & _fecha_ef.notna()
+            df_dia.loc[_mask, "dia_semana"] = _fecha_ef[_mask].dt.day_name()
+
+    if "dia_semana" in df_dia.columns:
         # Datos agendadas
-        by_ag = df.groupby("dia_semana").size().reset_index(name="N")
+        by_ag = df_dia.groupby("dia_semana").size().reset_index(name="N")
         by_ag["Día"]   = by_ag["dia_semana"].map(day_esp)
         by_ag["orden"] = by_ag["dia_semana"].map({d: i for i, d in enumerate(day_order)})
-        by_ag = by_ag.sort_values("orden")
+        by_ag = by_ag[by_ag["Día"].notna()].sort_values("orden")
 
         # Datos realizadas
         by_re = (
-            df[df["estado"] == "Realizada"]
+            df_dia[df_dia["estado"] == "Realizada"]
             .groupby("dia_semana").size().reset_index(name="N")
         )
         by_re["Día"]   = by_re["dia_semana"].map(day_esp)
         by_re["orden"] = by_re["dia_semana"].map({d: i for i, d in enumerate(day_order)})
-        by_re = by_re.sort_values("orden")
+        by_re = by_re[by_re["Día"].notna()].sort_values("orden")
 
-        with col_l:
-            _day_bar_chart(by_ag, "N", "#457b9d", "#1a5276", "📅 Agendadas por día de semana")
-        with col_r:
-            _day_bar_chart(by_re, "N", "#52b788", "#1a6b3c", "✅ Realizadas por día de semana")
+        _day_bar_chart(by_ag, "N", "#457b9d", "#1a5276", "📅 Agendadas por día de semana")
+        _day_bar_chart(by_re, "N", "#52b788", "#1a6b3c", "✅ Realizadas por día de semana")
     else:
-        col_l.info("No hay datos de día de semana.")
+        st.info("No hay datos de día de semana.")
 
     st.divider()
 
