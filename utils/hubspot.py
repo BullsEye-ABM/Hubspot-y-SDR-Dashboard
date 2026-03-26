@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 # Cache manual de owners: solo guarda resultados no vacíos y reintenta si falló
 _owners_cache: dict = {}
+# Cache de nombre interno de propiedad "SDR Asignado - [Cliente]"
+_prop_name_cache: dict = {}
 
 
 # ─────────────────────────────────────────
@@ -123,6 +125,118 @@ def _owner_name(owners: dict, owner_id) -> str:
 
 
 # ─────────────────────────────────────────
+#  SDR por propiedad de contacto
+# ─────────────────────────────────────────
+
+def _get_sdr_property_for_client(token: str, client_name: str) -> str:
+    """
+    Busca el nombre interno de la propiedad 'SDR Asignado - [ClienteName]'
+    en los contactos de HubSpot.
+    Ej: 'SDR Asignado - Lemu' → 'sdr_asignado___lemu' (varía por cuenta).
+    """
+    cache_key = f"{token}:{client_name}"
+    if cache_key in _prop_name_cache:
+        return _prop_name_cache[cache_key]
+
+    prop_name = ""
+    try:
+        resp = requests.get(
+            "https://api.hubapi.com/crm/v3/properties/contacts",
+            headers=_headers(token),
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            for prop in resp.json().get("results", []):
+                label = prop.get("label", "")
+                # Buscar propiedades que contengan "SDR Asignado" y el nombre del cliente
+                if "SDR Asignado" in label and client_name.lower() in label.lower():
+                    prop_name = prop["name"]
+                    break
+    except Exception:
+        pass
+
+    _prop_name_cache[cache_key] = prop_name
+    return prop_name
+
+
+def _enrich_calls_with_sdr(token: str, df: pd.DataFrame, client_name: str) -> pd.DataFrame:
+    """
+    Para cada llamada, obtiene el contacto asociado y lee la propiedad
+    'SDR Asignado - [Cliente]' del contacto para identificar al SDR real.
+    Usa batch API para minimizar el número de requests.
+    """
+    if df.empty or not client_name:
+        return df
+
+    prop_name = _get_sdr_property_for_client(token, client_name)
+    if not prop_name:
+        return df  # sin propiedad encontrada, quedan los owner IDs como fallback
+
+    call_ids = df["id"].astype(str).tolist()
+    batch_size = 100
+    call_to_contact: dict = {}
+
+    # Paso 1: batch-fetch call → contact associations
+    for i in range(0, len(call_ids), batch_size):
+        batch = call_ids[i:i + batch_size]
+        try:
+            resp = requests.post(
+                "https://api.hubapi.com/crm/v4/associations/calls/contacts/batch/read",
+                headers=_headers(token),
+                json={"inputs": [{"id": cid} for cid in batch]},
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                for item in resp.json().get("results", []):
+                    from_id = str(item["from"]["id"])
+                    to_list = item.get("to", [])
+                    if to_list:
+                        call_to_contact[from_id] = str(to_list[0]["toObjectId"])
+        except Exception:
+            pass
+
+    if not call_to_contact:
+        return df
+
+    # Paso 2: batch-fetch contact SDR property
+    contact_ids = list(set(call_to_contact.values()))
+    contact_to_sdr: dict = {}
+
+    for i in range(0, len(contact_ids), batch_size):
+        batch = contact_ids[i:i + batch_size]
+        try:
+            resp = requests.post(
+                "https://api.hubapi.com/crm/v3/objects/contacts/batch/read",
+                headers=_headers(token),
+                json={
+                    "inputs": [{"id": cid} for cid in batch],
+                    "properties": [prop_name],
+                },
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                for c in resp.json().get("results", []):
+                    sdr = (c.get("properties", {}).get(prop_name) or "").strip()
+                    if sdr:
+                        contact_to_sdr[str(c["id"])] = sdr
+        except Exception:
+            pass
+
+    # Paso 3: mapear call_id → sdr_name y actualizar el dataframe
+    sdr_map = {
+        cid: contact_to_sdr[cont_id]
+        for cid, cont_id in call_to_contact.items()
+        if cont_id in contact_to_sdr
+    }
+
+    df = df.copy()
+    enriched = df["id"].astype(str).map(sdr_map)
+    # Solo reemplazar donde se encontró un valor; si no, dejar el fallback existente
+    df["sdr"] = enriched.where(enriched.notna() & (enriched != ""), df["sdr"])
+    return df
+
+
+# ─────────────────────────────────────────
 #  Llamadas
 # ─────────────────────────────────────────
 
@@ -134,7 +248,7 @@ CALL_PROPS = [
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def get_calls(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
+def get_calls(token: str, account_name: str, client_name: str = "", days: int = 90) -> pd.DataFrame:
     raw    = _search("calls", token, CALL_PROPS, "hs_timestamp", days)
     owners = get_owners(token)
     if not raw:
@@ -170,6 +284,9 @@ def get_calls(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
     df["semana"]      = df["fecha_local"].dt.isocalendar().week.astype(int)
     df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
     df["conectada"]   = df["estado"].str.upper() == "COMPLETED"
+
+    # Enriquecer con SDR real desde propiedad del contacto asociado
+    df = _enrich_calls_with_sdr(token, df, client_name)
     return df
 
 
@@ -303,10 +420,11 @@ def get_activities(token: str, account_name: str, days: int = 90) -> pd.DataFram
 def _load_single_account(acc: dict, days: int) -> dict:
     """Carga los 4 datasets de una sola cuenta."""
     name, token = acc["name"], acc["token"]
+    client = acc.get("client", name)
     try:
         return {
             "name":       name,
-            "calls":      get_calls(token, name, days),
+            "calls":      get_calls(token, name, client, days),
             "contacts":   get_contacts(token, name, days),
             "companies":  get_companies(token, name, days),
             "activities": get_activities(token, name, days),
