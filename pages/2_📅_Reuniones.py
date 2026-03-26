@@ -537,14 +537,13 @@ with tab_periodo:
                 range=[0, max_ag * 1.35],   # espacio para labels "outside"
             ),
             yaxis2=dict(
-                title="Tasa realización %",
+                title=dict(text="Tasa realización %", font=dict(color="#f4a261")),
                 overlaying="y",
                 side="right",
                 range=[0, 130],
                 showgrid=False,
                 ticksuffix="%",
                 tickfont=dict(color="#f4a261"),
-                titlefont=dict(color="#f4a261"),
             ),
             legend=dict(
                 orientation="h",
@@ -554,7 +553,6 @@ with tab_periodo:
                 borderwidth=1,
             ),
             margin=dict(t=60, b=40, l=50, r=60),
-            hoverlabel=dict(bgcolor="white", font=dict(size=13)),
         )
         st.plotly_chart(fig, use_container_width=True)
 
