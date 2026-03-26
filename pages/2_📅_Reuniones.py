@@ -85,6 +85,9 @@ with st.expander("🔧 Diagnóstico técnico", expanded=False):
 
 today = date.today()
 
+# Valores que se consideran "propuesta enviada"
+_SI_PROPUESTA = {"si", "sí", "yes", "y", "x", "✓", "true", "1"}
+
 # ── Estado de cada reunión — directo desde columna "Realizado" (col J) ────────
 _ESTADO_MAP = {
     "si":        "Realizada",
@@ -257,7 +260,7 @@ def resumen(g: pd.DataFrame) -> pd.Series:
     no_real    = (g["estado"] == "No realizada").sum()
     propuestas = 0
     if "propuesta" in g.columns:
-        propuestas = g["propuesta"].replace({"": pd.NA, "nan": pd.NA}).notna().sum()
+        propuestas = g["propuesta"].astype(str).str.strip().str.lower().isin(_SI_PROPUESTA).sum()
     return pd.Series({
         "Agendadas":     total,
         "Realizadas":    int(realizadas),
@@ -377,7 +380,7 @@ reagendar_total  = (df["estado"] == "Reagendar").sum()
 tasa_total       = round(realizadas_total / total * 100, 1) if total > 0 else 0
 prop_total       = 0
 if "propuesta" in df.columns:
-    prop_total = df["propuesta"].replace({"": pd.NA, "nan": pd.NA}).notna().sum()
+    prop_total = df["propuesta"].astype(str).str.strip().str.lower().isin(_SI_PROPUESTA).sum()
 
 st.title("📅 Gestión de Reuniones SDR")
 periodo_str = f"{start_date.strftime('%d/%m/%Y')} → {end_date.strftime('%d/%m/%Y')}"
@@ -705,7 +708,7 @@ with tab_analisis:
     with col_r2:
         st.subheader("📄 Reuniones con Propuesta enviada")
         if "propuesta" in df.columns:
-            df_prop  = df[df["propuesta"].replace({"": pd.NA, "nan": pd.NA}).notna()].copy()
+            df_prop  = df[df["propuesta"].astype(str).str.strip().str.lower().isin(_SI_PROPUESTA)].copy()
             n_prop   = len(df_prop)
             pct_prop = round(n_prop / total * 100, 1) if total > 0 else 0
             st.metric("Con propuesta", f"{n_prop:,}", delta=f"{pct_prop}% del total filtrado")
