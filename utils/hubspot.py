@@ -7,6 +7,7 @@ Mejoras de performance:
   - Paginación de 200 registros por página (antes era 100)
 """
 
+import re
 import requests
 import pandas as pd
 import streamlit as st
@@ -16,6 +17,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 _owners_cache: dict = {}
 # Cache de nombre interno de propiedad "SDR Asignado - [Cliente]"
 _prop_name_cache: dict = {}
+
+
+def _normalize_phone(phone) -> str:
+    """Normaliza número de teléfono: solo dígitos, sin espacios ni símbolos."""
+    if not phone:
+        return ""
+    return re.sub(r"\D", "", str(phone))
 
 
 # ─────────────────────────────────────────
@@ -161,22 +169,26 @@ def _get_sdr_property_for_client(token: str, client_name: str) -> str:
 
 def _enrich_calls_with_sdr(token: str, df: pd.DataFrame, client_name: str) -> pd.DataFrame:
     """
-    Para cada llamada, obtiene el contacto asociado y lee la propiedad
-    'SDR Asignado - [Cliente]' del contacto para identificar al SDR real.
-    Usa batch API para minimizar el número de requests.
+    Enriquece las llamadas con el nombre real del SDR usando dos estrategias:
+
+    1. Asociaciones call → contacto (funciona cuando HubSpot tiene el link creado)
+    2. Fallback por número de teléfono: busca contactos donde la propiedad
+       'SDR Asignado - [Cliente]' esté rellena y empareja por teléfono.
     """
     if df.empty or not client_name:
         return df
 
     prop_name = _get_sdr_property_for_client(token, client_name)
     if not prop_name:
-        return df  # sin propiedad encontrada, quedan los owner IDs como fallback
+        return df
 
-    call_ids = df["id"].astype(str).tolist()
+    df = df.copy()
     batch_size = 100
+
+    # ── Estrategia 1: Asociaciones call → contacto ────────────────────────────
+    call_ids = df["id"].astype(str).tolist()
     call_to_contact: dict = {}
 
-    # Paso 1: batch-fetch call → contact associations
     for i in range(0, len(call_ids), batch_size):
         batch = call_ids[i:i + batch_size]
         try:
@@ -195,44 +207,85 @@ def _enrich_calls_with_sdr(token: str, df: pd.DataFrame, client_name: str) -> pd
         except Exception:
             pass
 
-    if not call_to_contact:
+    if call_to_contact:
+        contact_ids = list(set(call_to_contact.values()))
+        contact_to_sdr: dict = {}
+        for i in range(0, len(contact_ids), batch_size):
+            batch = contact_ids[i:i + batch_size]
+            try:
+                resp = requests.post(
+                    "https://api.hubapi.com/crm/v3/objects/contacts/batch/read",
+                    headers=_headers(token),
+                    json={"inputs": [{"id": cid} for cid in batch],
+                          "properties": [prop_name]},
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    for c in resp.json().get("results", []):
+                        sdr = (c.get("properties", {}).get(prop_name) or "").strip()
+                        if sdr:
+                            contact_to_sdr[str(c["id"])] = sdr
+            except Exception:
+                pass
+
+        sdr_map = {cid: contact_to_sdr[cid2]
+                   for cid, cid2 in call_to_contact.items()
+                   if cid2 in contact_to_sdr}
+        enriched = df["id"].astype(str).map(sdr_map)
+        df["sdr"] = enriched.where(enriched.notna() & (enriched != ""), df["sdr"])
+
+    # ── Estrategia 2: Fallback por número de teléfono ─────────────────────────
+    # Solo para llamadas que aún tienen un ID numérico (no resuelto)
+    unresolved = df["sdr"].str.match(r"^\d+$", na=False)
+    if not unresolved.any():
         return df
 
-    # Paso 2: batch-fetch contact SDR property
-    contact_ids = list(set(call_to_contact.values()))
-    contact_to_sdr: dict = {}
-
-    for i in range(0, len(contact_ids), batch_size):
-        batch = contact_ids[i:i + batch_size]
+    # Cargar todos los contactos donde prop_name está relleno
+    phone_to_sdr: dict = {}
+    after = ""
+    while True:
         try:
+            body: dict = {
+                "filterGroups": [{"filters": [{
+                    "propertyName": prop_name,
+                    "operator": "HAS_PROPERTY",
+                }]}],
+                "properties": ["phone", "mobilephone", prop_name],
+                "limit": 100,
+            }
+            if after:
+                body["after"] = after
             resp = requests.post(
-                "https://api.hubapi.com/crm/v3/objects/contacts/batch/read",
+                "https://api.hubapi.com/crm/v3/objects/contacts/search",
                 headers=_headers(token),
-                json={
-                    "inputs": [{"id": cid} for cid in batch],
-                    "properties": [prop_name],
-                },
+                json=body,
                 timeout=30,
             )
-            if resp.status_code == 200:
-                for c in resp.json().get("results", []):
-                    sdr = (c.get("properties", {}).get(prop_name) or "").strip()
-                    if sdr:
-                        contact_to_sdr[str(c["id"])] = sdr
+            if resp.status_code != 200:
+                break
+            data = resp.json()
+            for c in data.get("results", []):
+                sdr = (c.get("properties", {}).get(prop_name) or "").strip()
+                if not sdr:
+                    continue
+                for field in ("phone", "mobilephone"):
+                    norm = _normalize_phone(c.get("properties", {}).get(field))
+                    if norm:
+                        phone_to_sdr[norm] = sdr
+            after = (data.get("paging", {}).get("next", {}) or {}).get("after", "")
+            if not after or not data.get("results"):
+                break
         except Exception:
-            pass
+            break
 
-    # Paso 3: mapear call_id → sdr_name y actualizar el dataframe
-    sdr_map = {
-        cid: contact_to_sdr[cont_id]
-        for cid, cont_id in call_to_contact.items()
-        if cont_id in contact_to_sdr
-    }
+    if phone_to_sdr:
+        def _resolve(row):
+            if not unresolved.loc[row.name]:
+                return row["sdr"]
+            norm = _normalize_phone(row.get("telefono_raw", ""))
+            return phone_to_sdr.get(norm, row["sdr"])
+        df["sdr"] = df.apply(_resolve, axis=1)
 
-    df = df.copy()
-    enriched = df["id"].astype(str).map(sdr_map)
-    # Solo reemplazar donde se encontró un valor; si no, dejar el fallback existente
-    df["sdr"] = enriched.where(enriched.notna() & (enriched != ""), df["sdr"])
     return df
 
 
@@ -244,6 +297,7 @@ CALL_PROPS = [
     "hs_call_title", "hs_call_duration", "hs_call_status",
     "hs_call_disposition", "hs_call_body", "hs_call_recording_url",
     "hs_call_direction", "hubspot_owner_id", "hs_timestamp",
+    "hs_call_to_number",
 ]
 
 
@@ -272,6 +326,7 @@ def get_calls(token: str, account_name: str, client_name: str = "", days: int = 
             "titulo":       p.get("hs_call_title", ""),
             "notas":        p.get("hs_call_body", ""),
             "grabacion":    p.get("hs_call_recording_url", ""),
+            "telefono_raw": p.get("hs_call_to_number", ""),
         })
 
     df = pd.DataFrame(rows)
