@@ -190,18 +190,24 @@ function getMeetingsForSDR(sdrName) {
   const all     = sheet.getDataRange().getValues();
   if (all.length < 2) return jsonResponse({ status: "ok", meetings: [] });
 
-  const headers = all[0].map(h => h.toString().trim());
-  const col = (name) => headers.findIndex(h => h === name);
+  const headers = all[0].map(h => h.toString().trim().toLowerCase());
 
-  const colResponsable = col("Responsable");
-  const colRealizado   = col("Realizado");
-  const colEmpresa     = col("Empresa");
-  const colContacto    = col("Contactos/Correo");
-  const colCargo       = col("Cargo");
-  const colPais        = col("País");
-  const colFecha       = col("Fecha de la reunión");
-  const colHora        = col("Hora");
-  const colCliente     = col("Cliente");
+  // Matching flexible: busca por palabras clave, no nombre exacto
+  const col = (kw1, kw2, exclude) => headers.findIndex(h => {
+    return h.includes(kw1) &&
+           (!kw2    || h.includes(kw2)) &&
+           (!exclude || !h.includes(exclude));
+  });
+
+  const colResponsable = col("responsable");
+  const colRealizado   = col("realizado");
+  const colEmpresa     = col("empresa");
+  const colContacto    = col("contacto");
+  const colCargo       = col("cargo");
+  const colPais        = headers.findIndex(h => /pa[íi]s/.test(h));
+  const colFecha       = col("fecha", "reuni");   // "fecha de la reunión"
+  const colHora        = col("hora");
+  const colCliente     = col("cliente");
 
   const pendingValues = ["pendiente", "no", "reagendar", ""];
 
