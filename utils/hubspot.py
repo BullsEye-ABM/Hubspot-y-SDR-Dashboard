@@ -26,6 +26,26 @@ def _normalize_phone(phone) -> str:
     return re.sub(r"\D", "", str(phone))
 
 
+def _phone_keys(phone) -> list:
+    """
+    Devuelve variantes del teléfono para matching robusto.
+    Números chilenos pueden guardarse con o sin código de país (56).
+    Ej: '+56912345678' → ['56912345678', '912345678']
+         '912345678'   → ['912345678', '56912345678']
+    """
+    norm = _normalize_phone(phone)
+    if not norm:
+        return []
+    keys = [norm]
+    # Si tiene 11 dígitos y empieza con 56 → también los últimos 9
+    if len(norm) == 11 and norm.startswith("56"):
+        keys.append(norm[2:])
+    # Si tiene 9 dígitos → también con prefijo 56
+    elif len(norm) == 9:
+        keys.append("56" + norm)
+    return keys
+
+
 # ─────────────────────────────────────────
 #  Helpers internos
 # ─────────────────────────────────────────
@@ -281,9 +301,9 @@ def _enrich_calls_with_sdr(token: str, df: pd.DataFrame, client_name: str) -> pd
                     if not sdr:
                         continue
                     for field in ("phone", "mobilephone"):
-                        norm = _normalize_phone(c.get("properties", {}).get(field))
-                        if norm and norm not in phone_to_sdr:
-                            phone_to_sdr[norm] = sdr
+                        for key in _phone_keys(c.get("properties", {}).get(field)):
+                            if key not in phone_to_sdr:
+                                phone_to_sdr[key] = sdr
                 after = (data.get("paging", {}).get("next", {}) or {}).get("after", "")
                 if not after or not data.get("results"):
                     break
@@ -294,8 +314,10 @@ def _enrich_calls_with_sdr(token: str, df: pd.DataFrame, client_name: str) -> pd
         def _resolve(row):
             if not unresolved.loc[row.name]:
                 return row["sdr"]
-            norm = _normalize_phone(row.get("telefono_raw", ""))
-            return phone_to_sdr.get(norm, row["sdr"])
+            for key in _phone_keys(row.get("telefono_raw", "")):
+                if key in phone_to_sdr:
+                    return phone_to_sdr[key]
+            return row["sdr"]
         df["sdr"] = df.apply(_resolve, axis=1)
 
     return df
