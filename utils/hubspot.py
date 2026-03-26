@@ -91,7 +91,7 @@ def get_owners(token: str) -> dict:
     try:
         after = None
         while True:
-            params = {"limit": 100}
+            params = {"limit": 100, "includeDeactivated": "true"}
             if after:
                 params["after"] = after
             resp = requests.get(

@@ -33,6 +33,20 @@ with st.spinner("Cargando llamadas..."):
         st.error(f"Error: {e}")
         st.stop()
 
+# ── DEBUG temporal ───────────────────────
+with st.expander("🔍 Debug SDR (temporal)", expanded=False):
+    if not df_all.empty:
+        st.write("**Valores únicos en columna 'sdr':**", df_all["sdr"].value_counts().to_dict())
+        st.write("**Cuentas cargadas:**", df_all["account"].unique().tolist())
+        st.write("**Total filas:**", len(df_all))
+        # Verificar si el enriquecimiento funcionó
+        sdr_vals = df_all["sdr"].unique().tolist()
+        numeric_sdrs = [s for s in sdr_vals if str(s).isdigit()]
+        if numeric_sdrs:
+            st.warning(f"⚠️ SDRs sin resolver (IDs numéricos): {numeric_sdrs}")
+        else:
+            st.success("✅ Todos los SDRs tienen nombre")
+
 # ── Filtros sidebar ───────────────────────
 with st.sidebar:
     sel_account = st.selectbox("Cuenta", ["Todas"] + account_names)
