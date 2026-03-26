@@ -980,13 +980,13 @@ with tab_metas:
     ideal_mes_actual = calculate_ideal_pct(this_month_start, this_month_end, today)
 
     df_mes = df_raw.copy()
-    # Fecha efectiva del mes: usa fecha_agendamiento; si falta, cae en fecha_reunion
-    if "fecha_agendamiento" in df_mes.columns:
-        _fecha_mes = df_mes["fecha_agendamiento"]
-        if "fecha_reunion" in df_mes.columns:
-            _fecha_mes = _fecha_mes.fillna(df_mes["fecha_reunion"])
-    elif "fecha_reunion" in df_mes.columns:
+    # Fecha efectiva del mes: usa fecha_reunion (cuándo ocurre); si falta, cae en fecha_agendamiento
+    if "fecha_reunion" in df_mes.columns:
         _fecha_mes = df_mes["fecha_reunion"]
+        if "fecha_agendamiento" in df_mes.columns:
+            _fecha_mes = _fecha_mes.fillna(df_mes["fecha_agendamiento"])
+    elif "fecha_agendamiento" in df_mes.columns:
+        _fecha_mes = df_mes["fecha_agendamiento"]
     else:
         _fecha_mes = pd.Series(dtype="datetime64[ns]", index=df_mes.index)
     df_mes = df_mes[_fecha_mes.notna()]
