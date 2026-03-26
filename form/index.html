@@ -531,6 +531,8 @@
   <!-- ── Edit mode ────────────────────────────────────────────────────────── -->
   <div id="mode-edit" style="display:none">
     <button class="back-link" onclick="setMode(null)">← Volver</button>
+
+    <!-- Paso 1: seleccionar SDR -->
     <div class="card">
       <div class="card-title">✏️ Actualizar reunión existente</div>
       <div class="field">
@@ -540,6 +542,20 @@
         </select>
       </div>
     </div>
+
+    <!-- Paso 2: seleccionar cliente (aparece tras elegir SDR) -->
+    <div id="edit-client-wrap" style="display:none">
+      <div class="card">
+        <div class="card-title">🏷️ Filtrar por cliente</div>
+        <div class="field">
+          <label>Cliente</label>
+          <select id="edit-client-select">
+            <option value="">Selecciona el cliente...</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <div id="meetings-list"></div>
   </div>
 
@@ -636,7 +652,7 @@ async function loadDropdowns() {
         allowEmptyOption: true,
         maxOptions: null,
         dropdownParent: 'body',
-        onChange: (val) => loadMeetings(val),
+        onChange: (val) => loadClientsForSDR(val),
       });
     } else {
       showToast("toast", "fail", "⚠️ Error al cargar opciones: " + json.message);
@@ -794,16 +810,56 @@ document.addEventListener("change", e => {
   e.target.closest?.(".field")?.classList.remove("err");
 });
 
-// ── Edit: cargar reuniones del SDR seleccionado ────────────────────────────
-async function loadMeetings(sdrName) {
-  if (!sdrName) {
-    document.getElementById("meetings-list").innerHTML = "";
-    return;
+// ── Edit paso 1: cargar clientes únicos para el SDR ───────────────────────
+async function loadClientsForSDR(sdrName) {
+  const clientWrap = document.getElementById("edit-client-wrap");
+  const list       = document.getElementById("meetings-list");
+
+  // Limpiar estado anterior
+  list.innerHTML = "";
+  clientWrap.style.display = "none";
+  if (tomInstances["edit-client-select"]) {
+    tomInstances["edit-client-select"].destroy();
+    delete tomInstances["edit-client-select"];
   }
+
+  if (!sdrName) return;
+
+  clientWrap.style.display = "block";
+  const clientSel = document.getElementById("edit-client-select");
+  clientSel.innerHTML = '<option value="">⏳ Cargando clientes...</option>';
+
+  try {
+    const res  = await fetch(`${SCRIPT_URL}?action=getClientsForSDR&sdr=${encodeURIComponent(sdrName)}`);
+    const json = await res.json();
+
+    clientSel.innerHTML = '<option value="">Selecciona el cliente...</option>';
+
+    if (json.status === "ok" && json.clientes.length) {
+      json.clientes.forEach(c => clientSel.appendChild(new Option(c, c)));
+    } else {
+      clientSel.innerHTML = '<option value="">— Sin clientes pendientes —</option>';
+    }
+
+    // Tom Select para cliente
+    tomInstances["edit-client-select"] = new TomSelect("#edit-client-select", {
+      allowEmptyOption: true,
+      maxOptions: null,
+      dropdownParent: 'body',
+      onChange: (val) => { if (val) loadMeetings(sdrName, val); else list.innerHTML = ""; },
+    });
+  } catch(e) {
+    clientSel.innerHTML = '<option value="">⚠️ Error de conexión</option>';
+  }
+}
+
+// ── Edit paso 2: cargar reuniones filtradas por SDR + cliente ─────────────
+async function loadMeetings(sdrName, clienteName) {
   const list = document.getElementById("meetings-list");
   list.innerHTML = '<div class="no-meetings">⏳ Cargando reuniones...</div>';
   try {
-    const res  = await fetch(`${SCRIPT_URL}?action=getMeetings&sdr=${encodeURIComponent(sdrName)}`);
+    const url = `${SCRIPT_URL}?action=getMeetings&sdr=${encodeURIComponent(sdrName)}&cliente=${encodeURIComponent(clienteName)}`;
+    const res  = await fetch(url);
     const json = await res.json();
     if (json.status === "ok") {
       renderMeetings(json.meetings);

@@ -41,8 +41,13 @@ function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) || "";
     if (action === "getMeetings") {
+      const sdr     = (e.parameter && e.parameter.sdr)     || "";
+      const cliente = (e.parameter && e.parameter.cliente) || "";
+      return getMeetingsForSDR(sdr, cliente);
+    }
+    if (action === "getClientsForSDR") {
       const sdr = (e.parameter && e.parameter.sdr) || "";
-      return getMeetingsForSDR(sdr);
+      return getClientsForSDR(sdr);
     }
     const data = getMaestraData();
     return jsonResponse({ status: "ok", data: data });
@@ -181,8 +186,48 @@ function saveReunion(p) {
   sheet.appendRow(row);
 }
 
+// ── Obtener clientes únicos con reuniones pendientes para un SDR ──────────
+function getClientsForSDR(sdrName) {
+  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(OUTPUT_TAB);
+  if (!sheet) return jsonResponse({ status: "ok", clientes: [] });
+
+  const all = sheet.getDataRange().getValues();
+  if (all.length < 2) return jsonResponse({ status: "ok", clientes: [] });
+
+  const headers = all[0].map(h => h.toString().trim().toLowerCase());
+  const col = (kw1, kw2, exclude) => headers.findIndex(h =>
+    h.includes(kw1) && (!kw2 || h.includes(kw2)) && (!exclude || !h.includes(exclude))
+  );
+
+  const colResponsable = col("responsable");
+  const colRealizado   = col("realizado");
+  const colCliente     = col("cliente");
+
+  const pendingValues = ["pendiente", "no", "reagendar", ""];
+  const seen = new Set();
+  const clientes = [];
+
+  for (let i = 1; i < all.length; i++) {
+    const r           = all[i];
+    const responsable = colResponsable >= 0 ? r[colResponsable]?.toString().trim()          : "";
+    const realizado   = colRealizado   >= 0 ? r[colRealizado]?.toString().trim().toLowerCase() : "";
+    const cliente     = colCliente     >= 0 ? r[colCliente]?.toString().trim()              : "";
+
+    if (responsable !== sdrName) continue;
+    if (!pendingValues.includes(realizado)) continue;
+    if (cliente && !seen.has(cliente)) {
+      clientes.push(cliente);
+      seen.add(cliente);
+    }
+  }
+
+  clientes.sort();
+  return jsonResponse({ status: "ok", clientes: clientes });
+}
+
 // ── Obtener reuniones pendientes para un SDR ──────────────────────────────
-function getMeetingsForSDR(sdrName) {
+function getMeetingsForSDR(sdrName, clienteFilter) {
   const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(OUTPUT_TAB);
   if (!sheet) return jsonResponse({ status: "ok", meetings: [] });
@@ -219,6 +264,10 @@ function getMeetingsForSDR(sdrName) {
 
     if (responsable !== sdrName) continue;
     if (!pendingValues.includes(realizado.toLowerCase())) continue;
+    if (clienteFilter) {
+      const c = colCliente >= 0 ? r[colCliente]?.toString().trim() : "";
+      if (c !== clienteFilter) continue;
+    }
 
     meetings.push({
       row:      i + 1,  // 1-indexed, row 1 = headers
