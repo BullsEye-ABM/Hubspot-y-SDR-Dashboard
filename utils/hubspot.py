@@ -79,6 +79,7 @@ def get_owners(token: str) -> dict:
     """
     Devuelve dict {owner_id_str: nombre_completo}.
     Cache manual: solo guarda si la respuesta tiene datos (evita cachear errores).
+    Pagina correctamente para cuentas con muchos owners.
     """
     # Devolver desde cache solo si tiene datos
     if token in _owners_cache and _owners_cache[token]:
@@ -86,16 +87,26 @@ def get_owners(token: str) -> dict:
 
     owners = {}
     try:
-        resp = requests.get(
-            "https://api.hubapi.com/crm/v3/owners",
-            headers=_headers(token),
-            params={"limit": 500},
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            for o in resp.json().get("results", []):
+        after = None
+        while True:
+            params = {"limit": 100}
+            if after:
+                params["after"] = after
+            resp = requests.get(
+                "https://api.hubapi.com/crm/v3/owners",
+                headers=_headers(token),
+                params=params,
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                break
+            data = resp.json()
+            for o in data.get("results", []):
                 full_name = f"{o.get('firstName', '')} {o.get('lastName', '')}".strip()
                 owners[str(o["id"])] = full_name or o.get("email", str(o["id"]))
+            after = data.get("paging", {}).get("next", {}).get("after")
+            if not after:
+                break
     except Exception:
         pass
 

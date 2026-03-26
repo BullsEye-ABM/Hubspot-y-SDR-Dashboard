@@ -85,19 +85,23 @@ with col_a:
     ).reset_index().sort_values("Total", ascending=False)
     sdr_stats["Tasa %"] = (sdr_stats["Conectadas"] / sdr_stats["Total"] * 100).round(1)
 
+    sdr_stats["sdr"] = sdr_stats["sdr"].astype(str)
     fig1 = go.Figure()
     fig1.add_bar(x=sdr_stats["sdr"], y=sdr_stats["Total"], name="Total", marker_color="#a8dadc")
     fig1.add_bar(x=sdr_stats["sdr"], y=sdr_stats["Conectadas"], name="Conectadas", marker_color="#457b9d")
-    fig1.update_layout(barmode="group", height=340, xaxis_title="SDR", yaxis_title="Llamadas")
+    fig1.update_layout(barmode="group", height=340, xaxis_title="SDR", yaxis_title="Llamadas",
+                       xaxis=dict(type="category"))
     st.plotly_chart(fig1, use_container_width=True)
 
 with col_b:
     st.subheader("Tasa de conexión por SDR")
     fig2 = px.bar(sdr_stats, x="sdr", y="Tasa %",
                   color="Tasa %", color_continuous_scale="RdYlGn",
-                  range_color=[0, 50], height=340, text="Tasa %")
+                  range_color=[0, 50], height=340, text="Tasa %",
+                  category_orders={"sdr": sdr_stats["sdr"].tolist()})
     fig2.update_traces(texttemplate="%{text}%", textposition="outside")
-    fig2.update_layout(coloraxis_showscale=False, xaxis_title="SDR")
+    fig2.update_layout(coloraxis_showscale=False, xaxis_title="SDR",
+                       xaxis=dict(type="category"))
     st.plotly_chart(fig2, use_container_width=True)
 
 # ── Duración promedio por SDR ─────────────
@@ -106,11 +110,12 @@ if connected > 0:
     dur_sdr = df[df["conectada"] == True].groupby("sdr")["duracion_min"].mean().round(1).reset_index()
     dur_sdr.columns = ["SDR", "Duración promedio (min)"]
     dur_sdr = dur_sdr.sort_values("Duración promedio (min)", ascending=False)
+    dur_sdr["SDR"] = dur_sdr["SDR"].astype(str)
     fig3 = px.bar(dur_sdr, x="SDR", y="Duración promedio (min)",
                   color="Duración promedio (min)", color_continuous_scale="Blues",
                   text="Duración promedio (min)", height=320)
     fig3.update_traces(texttemplate="%{text} min", textposition="outside")
-    fig3.update_layout(coloraxis_showscale=False)
+    fig3.update_layout(coloraxis_showscale=False, xaxis=dict(type="category"))
     st.plotly_chart(fig3, use_container_width=True)
 else:
     st.info("No hay llamadas conectadas para mostrar duración.")
