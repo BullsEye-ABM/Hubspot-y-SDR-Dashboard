@@ -961,10 +961,16 @@ with tab_metas:
         st.info("No se encontraron clientes activos en la Maestra IA.")
 
     # ── Resumen cumplimiento mes actual ───────────────────────────────────────
+    _MESES_ES = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+        5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+    }
+    _mes_actual_str = f"{_MESES_ES[today.month]} {today.year}"
     st.markdown("---")
-    st.markdown(f"### 📊 Cumplimiento — {today.strftime('%B %Y').capitalize()}")
+    st.markdown(f"### 📊 Cumplimiento — {_mes_actual_str}")
     st.caption(
-        f"Reuniones agendadas en el mes actual vs. meta de {today.strftime('%B %Y')}. "
+        f"Reuniones agendadas en el mes actual vs. meta de {_mes_actual_str}. "
         f"% Ideal hoy: **{calculate_ideal_pct(date(today.year, today.month, 1), date(today.year, today.month, calendar.monthrange(today.year, today.month)[1]), today)}%**"
     )
 
