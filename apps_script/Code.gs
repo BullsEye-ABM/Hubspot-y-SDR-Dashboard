@@ -124,7 +124,7 @@ function getMaestraData(ss) {
   const colPais      = headers.findIndex(h => /pa[íi]s/i.test(h));
   const colIndustria = idx("industria");
 
-  const result = { clientes:[], sdrs:[], origenes:[], paises:[], industrias:[] };
+  const result = { clientes:[], sdrs:[], origenes:[], paises:[], industrias:[], propuestas:[] };
   const seen   = {
     clientes:   new Set(),
     sdrs:       new Set(),
@@ -175,6 +175,36 @@ function getMaestraData(ss) {
   result.origenes.sort();
   result.paises.sort();
   result.industrias.sort();
+
+  // Leer opciones de validación de datos de la columna "Propuesta/Oportunidad"
+  try {
+    const outSheet = ss.getSheetByName(OUTPUT_TAB);
+    if (outSheet && outSheet.getLastRow() > 1) {
+      const outHeaders = outSheet.getRange(1, 1, 1, outSheet.getLastColumn()).getValues()[0];
+      const outHeadersL = outHeaders.map(h => h.toString().trim().toLowerCase());
+      const colP = outHeadersL.findIndex(h => h.includes("propuesta") || h.includes("oportunidad"));
+      if (colP >= 0) {
+        // Buscar en las primeras filas hasta encontrar una celda con validación de lista
+        const lastRow = Math.min(outSheet.getLastRow(), 50);
+        for (let r = 2; r <= lastRow; r++) {
+          const dv = outSheet.getRange(r, colP + 1).getDataValidation();
+          if (dv && dv.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
+            result.propuestas = dv.getCriteriaValues()[0] || [];
+            break;
+          }
+        }
+      }
+    }
+  } catch(e) {}
+
+  // Fallback: lista fija si no se encontró validación de datos en el sheet
+  if (!result.propuestas.length) {
+    result.propuestas = [
+      "Si","No","Pendiente de envio","Licitación","Exploratoria",
+      "Demo","Cierre perdido","Cliente","Feedback pendiente",
+      "buscando Segunda reunión","No era el contacto - Escalar"
+    ];
+  }
 
   return result;
 }

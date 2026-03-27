@@ -599,7 +599,8 @@ const SEARCHABLE_SELECTS = ["s-cliente", "s-sdr", "s-origen", "s-pais", "s-indus
 const tomInstances = {};
 
 // Cache de reuniones pendientes (cargadas al inicio)
-let allMeetings = [];
+let allMeetings   = [];
+let allPropuestas = [];
 
 // ── Inicializar al cargar ─────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -668,7 +669,8 @@ async function loadDropdowns() {
       fill("s-industria",      json.data.industrias, true); // true = agregar "Otra" al final
       fill("edit-sdr-select",  json.data.sdrs);
       // Guardar reuniones pendientes para filtrado local (evita roundtrips al servidor)
-      allMeetings = json.data.meetings || [];
+      allMeetings   = json.data.meetings   || [];
+      allPropuestas = json.data.propuestas || [];
       // Inicializar Tom Select en los searchables DESPUÉS de llenar
       SEARCHABLE_SELECTS.forEach(id => initTomSelect(id));
       // Tom Select para el selector de SDR en modo edición
@@ -954,8 +956,10 @@ function renderMeetings(meetings) {
         </div>
         <div class="field" style="grid-column:1/-1">
           <label>Propuesta/Oportunidad</label>
-          <textarea id="prop-${i}" rows="2" placeholder="Descripción de la propuesta u oportunidad..."
-                    style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;resize:vertical;">${m.propuesta || ""}</textarea>
+          <select id="prop-${i}" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;appearance:none;">
+            <option value="">Sin especificar</option>
+            ${allPropuestas.map(op => `<option value="${op}"${m.propuesta===op?" selected":""}>${op}</option>`).join("")}
+          </select>
         </div>
         <div>
           <button class="btn-update" onclick="updateMeeting(${i}, ${m.row})" id="upd-${i}">
