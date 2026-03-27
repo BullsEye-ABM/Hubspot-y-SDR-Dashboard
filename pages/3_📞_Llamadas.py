@@ -70,8 +70,9 @@ with st.sidebar:
 with st.spinner("Cargando llamadas..."):
     try:
         data = load_all_accounts(st.secrets, days=days)
-        df_all = data["calls"]
+        df_all       = data["calls"]
         account_names = data["account_names"]
+        active_sdrs  = data.get("active_sdrs", [])
     except Exception as e:
         st.error(f"Error: {e}")
         st.stop()
@@ -82,38 +83,21 @@ if not df_all.empty and "fecha" in df_all.columns:
              else df_all["fecha"].dt.date
     df_all = df_all[(_fecha >= start_date) & (_fecha <= end_date)]
 
-# ── DEBUG temporal ───────────────────────
-with st.expander("🔍 Debug SDR (temporal)", expanded=False):
-    if not df_all.empty:
-        st.write("**Valores únicos en columna 'sdr':**", df_all["sdr"].value_counts().to_dict())
-        st.write("**Cuentas cargadas:**", df_all["account"].unique().tolist())
-        st.write("**Total filas:**", len(df_all))
-        # Verificar si el enriquecimiento funcionó
-        sdr_vals = df_all["sdr"].unique().tolist()
-        numeric_sdrs = [s for s in sdr_vals if str(s).isdigit()]
-        if numeric_sdrs:
-            st.warning(f"⚠️ SDRs sin resolver (IDs numéricos): {numeric_sdrs}")
-        else:
-            st.success("✅ Todos los SDRs tienen nombre")
-
-        # Diagnóstico de llamadas vacías
-        df_vacias = df_all[df_all["sdr"].str.strip() == ""]
-        if not df_vacias.empty and "telefono_raw" in df_vacias.columns:
-            st.write(f"**Llamadas sin SDR: {len(df_vacias)}**")
-            sin_tel = df_vacias["telefono_raw"].str.strip().eq("").sum()
-            con_tel = len(df_vacias) - sin_tel
-            st.write(f"→ Sin teléfono (telefono_raw vacío): {sin_tel}")
-            st.write(f"→ Con teléfono pero sin match: {con_tel}")
-            if con_tel > 0:
-                st.write("**Muestra de teléfonos sin match (primeros 10):**",
-                         df_vacias[df_vacias["telefono_raw"].str.strip() != ""]["telefono_raw"].head(10).tolist())
+# ── Filtrar solo SDRs activos (desde Maestra IA) ──────────────────────────
+if not df_all.empty and active_sdrs:
+    # Normalizar nombres para comparación insensible a mayúsculas/espacios
+    active_set = {s.strip().lower() for s in active_sdrs}
+    mask_active = df_all["sdr"].str.strip().str.lower().isin(active_set)
+    df_all = df_all[mask_active]
 
 # ── Filtros sidebar ───────────────────────
 with st.sidebar:
     st.divider()
     sel_account = st.selectbox("Cuenta", ["Todas"] + account_names)
-    sdrs_list = ["Todos"] + sorted([s for s in df_all["sdr"].dropna().unique() if str(s).strip()])  if not df_all.empty else ["Todos"]
-    sel_sdr = st.selectbox("SDR", sdrs_list)
+    # Solo mostrar SDRs activos en el filtro (ya filtrado en df_all)
+    sdrs_disponibles = sorted([s for s in df_all["sdr"].dropna().unique() if str(s).strip()]) \
+                       if not df_all.empty else []
+    sel_sdr = st.selectbox("SDR", ["Todos"] + sdrs_disponibles)
     only_connected = st.checkbox("Solo llamadas conectadas", value=False)
     periodo_str = f"{start_date.strftime('%d/%m/%Y')} → {end_date.strftime('%d/%m/%Y')}"
     st.caption(f"Período: **{periodo_str}**")
