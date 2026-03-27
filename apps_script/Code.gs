@@ -226,7 +226,7 @@ function getPendingMeetings(ss) {
       contacto:  colContacto    >= 0 ? r[colContacto]?.toString().trim()    : "",
       cargo:     colCargo       >= 0 ? r[colCargo]?.toString().trim()       : "",
       pais:      colPais        >= 0 ? r[colPais]?.toString().trim()        : "",
-      fecha:     colFecha       >= 0 ? r[colFecha]?.toString().trim()       : "",
+      fecha:     colFecha       >= 0 ? _cellDate(r[colFecha])              : "",
       hora:      colHora        >= 0 ? r[colHora]?.toString().trim()        : "",
       estado:    realizado,
       propuesta: colPropuesta   >= 0 ? r[colPropuesta]?.toString().trim()   : "",
@@ -380,7 +380,7 @@ function getMeetingsForSDR(ss, sdrName, clienteFilter) {
       contacto:  colContacto  >= 0 ? r[colContacto]?.toString().trim()  : "",
       cargo:     colCargo     >= 0 ? r[colCargo]?.toString().trim()     : "",
       pais:      colPais      >= 0 ? r[colPais]?.toString().trim()      : "",
-      fecha:     colFecha     >= 0 ? r[colFecha]?.toString().trim()     : "",
+      fecha:     colFecha     >= 0 ? _cellDate(r[colFecha])              : "",
       hora:      colHora      >= 0 ? r[colHora]?.toString().trim()      : "",
       estado:    realizado,
       cliente:   colCliente   >= 0 ? r[colCliente]?.toString().trim()   : "",
@@ -428,4 +428,16 @@ function jsonResponse(data) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Helper: formatear celda de fecha → "DD/MM/YYYY" ───────────────────────
+// getValues() devuelve objetos Date para celdas con formato fecha.
+// .toString() sobre ese Date genera un string largo que flatpickr parsea mal.
+// Usamos Utilities.formatDate para garantizar el formato correcto.
+function _cellDate(val) {
+  if (!val) return "";
+  if (val instanceof Date) {
+    return Utilities.formatDate(val, Session.getScriptTimeZone(), "dd/MM/yyyy");
+  }
+  return val.toString().trim();
 }
