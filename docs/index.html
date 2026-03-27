@@ -941,6 +941,11 @@ function renderMeetings(meetings) {
             <option value="Reagendar"  ${m.estado==="Reagendar"  ? "selected":""}>🔄 Reagendar</option>
           </select>
         </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>Propuesta/Oportunidad</label>
+          <textarea id="prop-${i}" rows="2" placeholder="Descripción de la propuesta u oportunidad..."
+                    style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;resize:vertical;">${m.propuesta || ""}</textarea>
+        </div>
         <div>
           <button class="btn-update" onclick="updateMeeting(${i}, ${m.row})" id="upd-${i}">
             Actualizar ✓
@@ -963,10 +968,11 @@ function renderMeetings(meetings) {
 }
 
 async function updateMeeting(idx, rowNum) {
-  const btn    = document.getElementById(`upd-${idx}`);
-  const status = document.getElementById(`ust-${idx}`);
-  const fecha  = document.getElementById(`fp-edit-${idx}`).value;
-  const estado = document.getElementById(`est-${idx}`).value;
+  const btn      = document.getElementById(`upd-${idx}`);
+  const status   = document.getElementById(`ust-${idx}`);
+  const fecha    = document.getElementById(`fp-edit-${idx}`).value;
+  const estado   = document.getElementById(`est-${idx}`).value;
+  const propuesta = (document.getElementById(`prop-${idx}`) || {}).value || "";
 
   btn.disabled = true;
   btn.textContent = "Guardando...";
@@ -982,6 +988,7 @@ async function updateMeeting(idx, rowNum) {
         row: rowNum,
         fecha_reunion: fecha,
         realizado: estado,
+        propuesta: propuesta,
       })
     });
     status.textContent = "✅ Actualizado correctamente";

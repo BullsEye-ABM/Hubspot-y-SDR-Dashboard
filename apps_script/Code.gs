@@ -35,6 +35,7 @@ const OUTPUT_HEADERS = [
   "Teléfono",
   "Industria",
   "Comentario de la reunión",
+  "Propuesta/Oportunidad",
   "Hora envío formulario"
 ];
 
@@ -204,6 +205,7 @@ function getPendingMeetings(ss) {
   const colPais        = headers.findIndex(h => /pa[íi]s/.test(h));
   const colFecha       = col("fecha", "reuni");
   const colHora        = col("hora");
+  const colPropuesta   = headers.findIndex(h => h.includes("propuesta") || h.includes("oportunidad"));
 
   const pendingValues = ["pendiente", "no", "reagendar", ""];
   const meetings = [];
@@ -217,16 +219,17 @@ function getPendingMeetings(ss) {
     if (!pendingValues.includes(realizado)) continue;
 
     meetings.push({
-      row:      i + 1,
-      sdr:      colResponsable >= 0 ? r[colResponsable]?.toString().trim() : "",
-      cliente:  colCliente     >= 0 ? r[colCliente]?.toString().trim()     : "",
-      empresa:  colEmpresa     >= 0 ? r[colEmpresa]?.toString().trim()     : "",
-      contacto: colContacto    >= 0 ? r[colContacto]?.toString().trim()    : "",
-      cargo:    colCargo       >= 0 ? r[colCargo]?.toString().trim()       : "",
-      pais:     colPais        >= 0 ? r[colPais]?.toString().trim()        : "",
-      fecha:    colFecha       >= 0 ? r[colFecha]?.toString().trim()       : "",
-      hora:     colHora        >= 0 ? r[colHora]?.toString().trim()        : "",
-      estado:   realizado,
+      row:       i + 1,
+      sdr:       colResponsable >= 0 ? r[colResponsable]?.toString().trim() : "",
+      cliente:   colCliente     >= 0 ? r[colCliente]?.toString().trim()     : "",
+      empresa:   colEmpresa     >= 0 ? r[colEmpresa]?.toString().trim()     : "",
+      contacto:  colContacto    >= 0 ? r[colContacto]?.toString().trim()    : "",
+      cargo:     colCargo       >= 0 ? r[colCargo]?.toString().trim()       : "",
+      pais:      colPais        >= 0 ? r[colPais]?.toString().trim()        : "",
+      fecha:     colFecha       >= 0 ? r[colFecha]?.toString().trim()       : "",
+      hora:      colHora        >= 0 ? r[colHora]?.toString().trim()        : "",
+      estado:    realizado,
+      propuesta: colPropuesta   >= 0 ? r[colPropuesta]?.toString().trim()   : "",
     });
   }
 
@@ -272,6 +275,7 @@ function saveReunion(p) {
     if (hl.includes("tel"))                                 return p.telefono           || "";
     if (hl.includes("industria"))                           return p.industria          || "";
     if (hl.includes("comentario"))                          return p.comentario         || "";
+    if (hl.includes("propuesta") || hl.includes("oportunidad")) return p.propuesta     || "";
     // Timestamp de envío: detecta variantes "Hora envío formulario" / "Fecha de registro"
     if (hl.includes("hora")  && hl.includes("env"))        return now;
     if (hl.includes("fecha") && hl.includes("env"))        return now;
@@ -352,6 +356,7 @@ function getMeetingsForSDR(ss, sdrName, clienteFilter) {
   const colFecha       = col("fecha", "reuni");
   const colHora        = col("hora");
   const colCliente     = col("cliente");
+  const colPropuesta   = headers.findIndex(h => h.includes("propuesta") || h.includes("oportunidad"));
 
   const pendingValues = ["pendiente", "no", "reagendar", ""];
   const meetings      = [];
@@ -369,16 +374,17 @@ function getMeetingsForSDR(ss, sdrName, clienteFilter) {
     }
 
     meetings.push({
-      row:      i + 1,
-      sdr:      responsable,
-      empresa:  colEmpresa  >= 0 ? r[colEmpresa]?.toString().trim()  : "",
-      contacto: colContacto >= 0 ? r[colContacto]?.toString().trim() : "",
-      cargo:    colCargo    >= 0 ? r[colCargo]?.toString().trim()    : "",
-      pais:     colPais     >= 0 ? r[colPais]?.toString().trim()     : "",
-      fecha:    colFecha    >= 0 ? r[colFecha]?.toString().trim()    : "",
-      hora:     colHora     >= 0 ? r[colHora]?.toString().trim()     : "",
-      estado:   realizado,
-      cliente:  colCliente  >= 0 ? r[colCliente]?.toString().trim()  : "",
+      row:       i + 1,
+      sdr:       responsable,
+      empresa:   colEmpresa   >= 0 ? r[colEmpresa]?.toString().trim()   : "",
+      contacto:  colContacto  >= 0 ? r[colContacto]?.toString().trim()  : "",
+      cargo:     colCargo     >= 0 ? r[colCargo]?.toString().trim()     : "",
+      pais:      colPais      >= 0 ? r[colPais]?.toString().trim()      : "",
+      fecha:     colFecha     >= 0 ? r[colFecha]?.toString().trim()     : "",
+      hora:      colHora      >= 0 ? r[colHora]?.toString().trim()      : "",
+      estado:    realizado,
+      cliente:   colCliente   >= 0 ? r[colCliente]?.toString().trim()   : "",
+      propuesta: colPropuesta >= 0 ? r[colPropuesta]?.toString().trim() : "",
     });
   }
 
@@ -395,11 +401,13 @@ function updateReunion(p) {
   if (isNaN(rowNum) || rowNum < 2) throw new Error("Número de fila inválido: " + p.row);
 
   const headers  = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const headersL = headers.map(h => h.toString().trim().toLowerCase());
   const colIndex = (name) => headers.findIndex(h => h.toString().trim() === name);
 
   const colFecha      = colIndex("Fecha de la reunión");
   const colRealizado  = colIndex("Realizado");
   const colComentario = colIndex("Comentario de la reunión");
+  const colPropuesta  = headersL.findIndex(h => h.includes("propuesta") || h.includes("oportunidad"));
 
   if (colFecha >= 0 && p.fecha_reunion !== undefined) {
     sheet.getRange(rowNum, colFecha + 1).setValue(p.fecha_reunion);
@@ -409,6 +417,9 @@ function updateReunion(p) {
   }
   if (colComentario >= 0 && p.comentario !== undefined && p.comentario !== "") {
     sheet.getRange(rowNum, colComentario + 1).setValue(p.comentario);
+  }
+  if (colPropuesta >= 0 && p.propuesta !== undefined) {
+    sheet.getRange(rowNum, colPropuesta + 1).setValue(p.propuesta);
   }
 }
 
