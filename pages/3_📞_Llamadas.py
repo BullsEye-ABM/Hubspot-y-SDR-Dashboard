@@ -167,8 +167,13 @@ st.divider()
 # ── Llamadas por SDR ──────────────────────
 col_a, col_b = st.columns(2)
 
-# Para los charts por SDR: excluir filas sin asignar (sdr="")
-df_named = df[df["sdr"].str.strip() != ""] if not df.empty else df
+# Para los charts: reemplazar sdr="" con "Sin asignar" para que siempre
+# haya algo visible aunque el enriquecimiento no haya resuelto el nombre.
+df_named = df.copy() if not df.empty else df
+if not df_named.empty:
+    df_named["sdr"] = df_named["sdr"].apply(
+        lambda x: x.strip() if str(x).strip() else "Sin asignar"
+    )
 
 with col_a:
     st.subheader("Llamadas totales vs conectadas por SDR")
