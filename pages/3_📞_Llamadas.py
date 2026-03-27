@@ -5,6 +5,7 @@ y transcripciones de las mejores llamadas.
 """
 
 import calendar
+import unicodedata
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -13,6 +14,12 @@ from datetime import date, timedelta
 
 from utils.hubspot import load_all_accounts
 from utils.sheets import get_maestra_activos
+
+
+def _norm(s: str) -> str:
+    """Minúsculas + sin tildes para comparación robusta de nombres SDR."""
+    s = (s or "").strip().lower()
+    return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode()
 
 st.set_page_config(page_title="Llamadas", page_icon="📞", layout="wide")
 
@@ -88,10 +95,18 @@ if not df_all.empty and "fecha" in df_all.columns:
     df_all = df_all[(_fecha >= start_date) & (_fecha <= end_date)]
 
 # ── Filtrar solo SDRs activos (desde Maestra IA) ──────────────────────────
+# Mantiene: (a) activos con nombre resuelto, (b) sin asignar (sdr="")
+# Excluye: SDRs con nombre que NO está en la lista de activos (p.ej. inactivos)
 if not df_all.empty and active_sdrs:
-    active_set  = {s.strip().lower() for s in active_sdrs}
-    mask_active = df_all["sdr"].str.strip().str.lower().isin(active_set)
+    active_set  = {_norm(s) for s in active_sdrs}
+    norm_sdr    = df_all["sdr"].apply(_norm)
+    mask_active = norm_sdr.isin(active_set) | (df_all["sdr"].str.strip() == "")
     df_all      = df_all[mask_active]
+    # Estandarizar nombres según Maestra (corrige tildes/capitalización)
+    norm_to_official = {_norm(s): s for s in active_sdrs}
+    df_all["sdr"] = df_all["sdr"].apply(
+        lambda x: norm_to_official.get(_norm(x), x)
+    )
 
 # ── Filtros sidebar ───────────────────────
 with st.sidebar:
@@ -121,6 +136,16 @@ st.divider()
 
 if df.empty:
     st.warning("Sin datos de llamadas para los filtros seleccionados.")
+    with st.expander("🔍 Diagnóstico"):
+        total_raw = len(data["calls"]) if "calls" in data else 0
+        st.write(f"**Total llamadas en HubSpot (últimos {days} días):** {total_raw:,}")
+        if not df_all.empty:
+            st.write(f"**Después de filtro de fecha ({start_date} → {end_date}):** {len(df_all):,}")
+            sdr_counts = df_all["sdr"].value_counts(dropna=False).head(20)
+            st.write("**SDRs encontrados en ese período:**", sdr_counts.to_dict())
+        else:
+            st.write(f"**Sin llamadas en el período {start_date} → {end_date}**")
+        st.write(f"**SDRs activos en Maestra IA ({len(active_sdrs)}):**", active_sdrs)
     st.stop()
 
 # ── KPIs ──────────────────────────────────
@@ -142,9 +167,12 @@ st.divider()
 # ── Llamadas por SDR ──────────────────────
 col_a, col_b = st.columns(2)
 
+# Para los charts por SDR: excluir filas sin asignar (sdr="")
+df_named = df[df["sdr"].str.strip() != ""] if not df.empty else df
+
 with col_a:
     st.subheader("Llamadas totales vs conectadas por SDR")
-    sdr_stats = df.groupby("sdr").agg(
+    sdr_stats = df_named.groupby("sdr").agg(
         Total=("id", "count"),
         Conectadas=("conectada", "sum")
     ).reset_index().sort_values("Total", ascending=False)
@@ -172,7 +200,7 @@ with col_b:
 # ── Duración promedio por SDR ─────────────
 st.subheader("Duración promedio de llamadas conectadas por SDR (minutos)")
 if connected > 0:
-    dur_sdr = df[df["conectada"] == True].groupby("sdr")["duracion_min"].mean().round(1).reset_index()
+    dur_sdr = df_named[df_named["conectada"] == True].groupby("sdr")["duracion_min"].mean().round(1).reset_index()
     dur_sdr.columns = ["SDR", "Duración promedio (min)"]
     dur_sdr = dur_sdr.sort_values("Duración promedio (min)", ascending=False)
     dur_sdr["SDR"] = dur_sdr["SDR"].astype(str)
