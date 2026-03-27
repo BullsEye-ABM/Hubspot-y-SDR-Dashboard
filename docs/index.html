@@ -595,6 +595,9 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyRbG9TwFZI3l4arrTsD
 const SEARCHABLE_SELECTS = ["s-cliente", "s-sdr", "s-origen", "s-pais", "s-industria"];
 const tomInstances = {};
 
+// Cache de reuniones pendientes (cargadas al inicio)
+let allMeetings = [];
+
 // ── Inicializar al cargar ─────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
   initDatePickers();
@@ -661,6 +664,8 @@ async function loadDropdowns() {
       fill("s-pais",           json.data.paises);
       fill("s-industria",      json.data.industrias, true); // true = agregar "Otra" al final
       fill("edit-sdr-select",  json.data.sdrs);
+      // Guardar reuniones pendientes para filtrado local (evita roundtrips al servidor)
+      allMeetings = json.data.meetings || [];
       // Inicializar Tom Select en los searchables DESPUÉS de llenar
       SEARCHABLE_SELECTS.forEach(id => initTomSelect(id));
       // Tom Select para el selector de SDR en modo edición
@@ -722,6 +727,13 @@ document.getElementById("form").addEventListener("submit", async (e) => {
   });
 
   const data = Object.fromEntries(formData.entries());
+
+  // Agregar timestamp de envío
+  const now = new Date();
+  data.timestamp = now.toLocaleString("es-CL", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
 
   try {
     await fetch(SCRIPT_URL, {
@@ -830,14 +842,14 @@ document.addEventListener("change", e => {
   e.target.closest?.(".field")?.classList.remove("err");
 });
 
-// ── Edit paso 1: cargar clientes únicos para el SDR ───────────────────────
-async function loadClientsForSDR(sdrName) {
+// ── Edit paso 1: filtrar clientes por SDR (local, sin llamada al servidor) ─
+function loadClientsForSDR(sdrName) {
   const clientWrap = document.getElementById("edit-client-wrap");
   const list       = document.getElementById("meetings-list");
 
-  // Limpiar estado anterior
   list.innerHTML = "";
   clientWrap.style.display = "none";
+  document.getElementById("edit-search-wrap").style.display = "none";
   if (tomInstances["edit-client-select"]) {
     tomInstances["edit-client-select"].destroy();
     delete tomInstances["edit-client-select"];
@@ -845,58 +857,41 @@ async function loadClientsForSDR(sdrName) {
 
   if (!sdrName) return;
 
+  // Filtrar localmente desde allMeetings (cargado al inicio)
+  const clientes = [...new Set(
+    allMeetings.filter(m => m.sdr === sdrName).map(m => m.cliente).filter(Boolean)
+  )].sort();
+
   clientWrap.style.display = "block";
   const clientSel = document.getElementById("edit-client-select");
-  clientSel.innerHTML = '<option value="">⏳ Cargando clientes...</option>';
+  clientSel.innerHTML = '<option value="">Selecciona el cliente...</option>';
 
-  try {
-    const res  = await fetch(`${SCRIPT_URL}?action=getClientsForSDR&sdr=${encodeURIComponent(sdrName)}`);
-    const json = await res.json();
-
-    clientSel.innerHTML = '<option value="">Selecciona el cliente...</option>';
-
-    if (json.status === "ok" && json.clientes.length) {
-      json.clientes.forEach(c => clientSel.appendChild(new Option(c, c)));
-    } else {
-      clientSel.innerHTML = '<option value="">— Sin clientes pendientes —</option>';
-    }
-
-    // Tom Select para cliente
-    tomInstances["edit-client-select"] = new TomSelect("#edit-client-select", {
-      allowEmptyOption: true,
-      maxOptions: null,
-      dropdownParent: 'body',
-      onChange: (val) => {
-        if (val) {
-          loadMeetings(sdrName, val);
-        } else {
-          list.innerHTML = "";
-          document.getElementById("edit-search-wrap").style.display = "none";
-          document.getElementById("edit-search-input").value = "";
-        }
-      },
-    });
-  } catch(e) {
-    clientSel.innerHTML = '<option value="">⚠️ Error de conexión</option>';
+  if (clientes.length) {
+    clientes.forEach(c => clientSel.appendChild(new Option(c, c)));
+  } else {
+    clientSel.innerHTML = '<option value="">— Sin clientes pendientes —</option>';
   }
+
+  tomInstances["edit-client-select"] = new TomSelect("#edit-client-select", {
+    allowEmptyOption: true,
+    maxOptions: null,
+    dropdownParent: 'body',
+    onChange: (val) => {
+      if (val) {
+        loadMeetings(sdrName, val);
+      } else {
+        list.innerHTML = "";
+        document.getElementById("edit-search-wrap").style.display = "none";
+        document.getElementById("edit-search-input").value = "";
+      }
+    },
+  });
 }
 
-// ── Edit paso 2: cargar reuniones filtradas por SDR + cliente ─────────────
-async function loadMeetings(sdrName, clienteName) {
-  const list = document.getElementById("meetings-list");
-  list.innerHTML = '<div class="no-meetings">⏳ Cargando reuniones...</div>';
-  try {
-    const url = `${SCRIPT_URL}?action=getMeetings&sdr=${encodeURIComponent(sdrName)}&cliente=${encodeURIComponent(clienteName)}`;
-    const res  = await fetch(url);
-    const json = await res.json();
-    if (json.status === "ok") {
-      renderMeetings(json.meetings);
-    } else {
-      list.innerHTML = '<div class="no-meetings">⚠️ Error al cargar reuniones.</div>';
-    }
-  } catch(e) {
-    list.innerHTML = '<div class="no-meetings">⚠️ Error de conexión.</div>';
-  }
+// ── Edit paso 2: filtrar reuniones por SDR + cliente (local, instantáneo) ──
+function loadMeetings(sdrName, clienteName) {
+  const meetings = allMeetings.filter(m => m.sdr === sdrName && m.cliente === clienteName);
+  renderMeetings(meetings);
 }
 
 function renderMeetings(meetings) {
