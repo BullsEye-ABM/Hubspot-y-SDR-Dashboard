@@ -159,8 +159,9 @@ def _owner_name(owners: dict, owner_id) -> str:
 def _get_all_sdr_properties(token: str) -> list:
     """
     Devuelve los nombres internos de TODAS las propiedades de contacto
-    cuya etiqueta contenga 'SDR Asignado' (ej: SDR Asignado - Lemu,
-    SDR Asignado - Sovos, SDR Asignado - BullsEye, etc.).
+    cuya etiqueta o nombre interno contenga 'sdr asignado' (case-insensitive).
+    Ej: 'SDR Asignado - BullsEye', 'sdr asignado - lemu', 'SDR_asignado', etc.
+    Solo cachea si encontró resultados (evita cachear errores transitorios).
     """
     cache_key = f"{token}:__all_sdr_props__"
     if cache_key in _prop_name_cache:
@@ -175,12 +176,17 @@ def _get_all_sdr_properties(token: str) -> list:
         )
         if resp.status_code == 200:
             for prop in resp.json().get("results", []):
-                if "SDR Asignado" in prop.get("label", ""):
+                label = prop.get("label", "").lower()
+                name  = prop.get("name",  "").lower()
+                # Case-insensitive: detecta 'SDR Asignado', 'sdr asignado', etc.
+                if "sdr asignado" in label or "sdr asignado" in name:
                     props.append(prop["name"])
     except Exception:
         pass
 
-    _prop_name_cache[cache_key] = props
+    # Solo cachear cuando encontramos propiedades → permite reintento si falló
+    if props:
+        _prop_name_cache[cache_key] = props
     return props
 
 
@@ -352,6 +358,7 @@ def get_calls(token: str, account_name: str, client_name: str = "", days: int = 
             "account":      account_name,
             "fecha":        pd.to_datetime(p.get("hs_timestamp"), utc=True, errors="coerce"),
             "sdr":          "",   # se rellena desde propiedades del contacto
+            "owner_name":   _owner_name(owners, p.get("hubspot_owner_id")),  # fallback
             "estado":       p.get("hs_call_status", ""),
             "disposicion":  p.get("hs_call_disposition", ""),
             "duracion_seg": duration_sec,
@@ -374,10 +381,19 @@ def get_calls(token: str, account_name: str, client_name: str = "", days: int = 
     df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
     df["conectada"]   = df["estado"].str.upper() == "COMPLETED"
 
-    # Enriquecer con SDR real desde propiedades de contacto (todas las 'SDR Asignado - *')
+    # Estrategia 1: enriquecer con SDR desde propiedades del contacto asociado
     df = _enrich_calls_with_sdr(token, df, client_name)
-    # Limpiar sdr: si sigue siendo un ID numérico, dejarlo vacío
-    df["sdr"] = df["sdr"].apply(lambda x: "" if str(x).strip().isdigit() else x)
+
+    # Estrategia 2 (fallback): si sdr sigue vacío o es ID numérico, usar owner_name.
+    # El filtro de activos en Llamadas.py se encargará de descartar owners no-SDR.
+    def _resolve_sdr(row):
+        sdr = str(row["sdr"]).strip()
+        if not sdr or sdr.isdigit():
+            owner = str(row.get("owner_name", "")).strip()
+            return owner if owner and not owner.isdigit() else ""
+        return sdr
+
+    df["sdr"] = df.apply(_resolve_sdr, axis=1)
     return df
 
 
