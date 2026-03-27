@@ -19,60 +19,6 @@ _owners_cache: dict = {}
 _prop_name_cache: dict = {}
 
 
-# ─────────────────────────────────────────
-#  SDRs activos desde Maestra IA (Google Sheets)
-# ─────────────────────────────────────────
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def get_active_sdrs(sheet_id: str, api_key: str) -> list:
-    """
-    Lee la pestaña 'Maestra IA' del Google Sheet y devuelve la lista
-    de SDRs cuyo status sea 'activo' (case-insensitive).
-    Usa la misma lógica que el Apps Script: busca columna 'Responsable'
-    y la columna 'Status' que viene después de ella.
-    """
-    url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
-        f"/values/Maestra%20IA?key={api_key}"
-    )
-    try:
-        resp = requests.get(url, timeout=15)
-        if resp.status_code != 200:
-            return []
-        rows = resp.json().get("values", [])
-        if len(rows) < 2:
-            return []
-
-        headers = [h.strip().lower() for h in rows[0]]
-
-        # Índice de "responsable" (sin "status")
-        col_resp = next(
-            (i for i, h in enumerate(headers) if "responsable" in h and "status" not in h),
-            -1,
-        )
-        if col_resp < 0:
-            return []
-
-        # Índice del "status" que está DESPUÉS de responsable
-        col_st = next(
-            (i for i, h in enumerate(headers) if "status" in h and i > col_resp),
-            -1,
-        )
-
-        active = []
-        seen   = set()
-        for row in rows[1:]:
-            sdr    = row[col_resp].strip() if col_resp < len(row) else ""
-            status = row[col_st].strip().lower() if col_st >= 0 and col_st < len(row) else ""
-            if sdr and status == "activo" and sdr not in seen:
-                active.append(sdr)
-                seen.add(sdr)
-
-        return sorted(active)
-    except Exception:
-        return []
-
-
 def _normalize_phone(phone) -> str:
     """Normaliza número de teléfono: solo dígitos, sin espacios ni símbolos."""
     if not phone:
@@ -596,13 +542,6 @@ def load_all_accounts(secrets, days: int = 90) -> dict:
 
     all_calls, all_contacts, all_companies, all_activities = [], [], [], []
 
-    # Cargar SDRs activos desde la Maestra IA (en paralelo con las cuentas)
-    gs = secrets.get("google_sheets", {})
-    active_sdrs = get_active_sdrs(
-        gs.get("sheet_id", ""),
-        gs.get("api_key", ""),
-    )
-
     # Carga paralela — un thread por cuenta
     with ThreadPoolExecutor(max_workers=min(len(accounts), 6)) as executor:
         future_to_acc = {
@@ -628,7 +567,6 @@ def load_all_accounts(secrets, days: int = 90) -> dict:
         "companies":     safe_concat(all_companies),
         "activities":    safe_concat(all_activities),
         "account_names": [a["name"] for a in accounts],
-        "active_sdrs":   active_sdrs,
     }
 
 

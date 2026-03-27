@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 from datetime import date, timedelta
 
 from utils.hubspot import load_all_accounts
+from utils.sheets import get_maestra_activos
 
 st.set_page_config(page_title="Llamadas", page_icon="📞", layout="wide")
 
@@ -69,13 +70,16 @@ with st.sidebar:
 # ── Carga de datos ────────────────────────
 with st.spinner("Cargando llamadas..."):
     try:
-        data = load_all_accounts(st.secrets, days=days)
-        df_all       = data["calls"]
+        data          = load_all_accounts(st.secrets, days=days)
+        df_all        = data["calls"]
         account_names = data["account_names"]
-        active_sdrs  = data.get("active_sdrs", [])
     except Exception as e:
         st.error(f"Error: {e}")
         st.stop()
+
+# ── SDRs activos desde Maestra IA ─────────
+maestra = get_maestra_activos(st.secrets)
+active_sdrs = maestra.get("sdrs", [])
 
 # ── Filtrar por fecha ─────────────────────
 if not df_all.empty and "fecha" in df_all.columns:
@@ -85,10 +89,9 @@ if not df_all.empty and "fecha" in df_all.columns:
 
 # ── Filtrar solo SDRs activos (desde Maestra IA) ──────────────────────────
 if not df_all.empty and active_sdrs:
-    # Normalizar nombres para comparación insensible a mayúsculas/espacios
-    active_set = {s.strip().lower() for s in active_sdrs}
+    active_set  = {s.strip().lower() for s in active_sdrs}
     mask_active = df_all["sdr"].str.strip().str.lower().isin(active_set)
-    df_all = df_all[mask_active]
+    df_all      = df_all[mask_active]
 
 # ── Filtros sidebar ───────────────────────
 with st.sidebar:
