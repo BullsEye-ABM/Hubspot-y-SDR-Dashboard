@@ -405,12 +405,16 @@ function updateReunion(p) {
   const colIndex = (name) => headers.findIndex(h => h.toString().trim() === name);
 
   const colFecha      = colIndex("Fecha de la reunión");
+  const colHora       = colIndex("Hora");
   const colRealizado  = colIndex("Realizado");
   const colComentario = colIndex("Comentario de la reunión");
   const colPropuesta  = headersL.findIndex(h => h.includes("propuesta") || h.includes("oportunidad"));
 
   if (colFecha >= 0 && p.fecha_reunion !== undefined) {
     sheet.getRange(rowNum, colFecha + 1).setValue(p.fecha_reunion);
+  }
+  if (colHora >= 0 && p.hora !== undefined) {
+    sheet.getRange(rowNum, colHora + 1).setValue(p.hora);
   }
   if (colRealizado >= 0 && p.realizado !== undefined) {
     sheet.getRange(rowNum, colRealizado + 1).setValue(p.realizado);

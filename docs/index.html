@@ -933,6 +933,12 @@ function renderMeetings(meetings) {
                  style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;" />
         </div>
         <div class="field">
+          <label>Hora de la reunión</label>
+          <select id="hora-edit-${i}" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;appearance:none;">
+            ${buildHoraOptions(m.hora || "")}
+          </select>
+        </div>
+        <div class="field">
           <label>Estado</label>
           <select id="est-${i}" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;appearance:none;">
             <option value="Pendiente"  ${m.estado==="Pendiente"  ? "selected":""}>⏳ Pendiente</option>
@@ -967,11 +973,26 @@ function renderMeetings(meetings) {
   });
 }
 
+// Genera <option> para select de hora (07:00 → 22:30, cada 30 min)
+function buildHoraOptions(selected) {
+  let opts = '<option value="">Sin especificar</option>';
+  for (let h = 7; h <= 22; h++) {
+    for (let m of [0, 30]) {
+      const hh  = String(h).padStart(2, "0");
+      const mm  = String(m).padStart(2, "0");
+      const val = `${hh}:${mm}`;
+      opts += `<option value="${val}"${val === selected ? " selected" : ""}>${val}</option>`;
+    }
+  }
+  return opts;
+}
+
 async function updateMeeting(idx, rowNum) {
-  const btn      = document.getElementById(`upd-${idx}`);
-  const status   = document.getElementById(`ust-${idx}`);
-  const fecha    = document.getElementById(`fp-edit-${idx}`).value;
-  const estado   = document.getElementById(`est-${idx}`).value;
+  const btn       = document.getElementById(`upd-${idx}`);
+  const status    = document.getElementById(`ust-${idx}`);
+  const fecha     = document.getElementById(`fp-edit-${idx}`).value;
+  const hora      = document.getElementById(`hora-edit-${idx}`).value;
+  const estado    = document.getElementById(`est-${idx}`).value;
   const propuesta = (document.getElementById(`prop-${idx}`) || {}).value || "";
 
   btn.disabled = true;
@@ -987,6 +1008,7 @@ async function updateMeeting(idx, rowNum) {
         action: "update",
         row: rowNum,
         fecha_reunion: fecha,
+        hora: hora,
         realizado: estado,
         propuesta: propuesta,
       })
