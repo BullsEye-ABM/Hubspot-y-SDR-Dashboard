@@ -14,7 +14,6 @@ from datetime import date, timedelta
 
 from utils.hubspot import load_all_accounts
 from utils.sheets import get_maestra_activos
-from utils.auth import require_login
 
 
 def _norm(s: str) -> str:
@@ -23,7 +22,6 @@ def _norm(s: str) -> str:
     return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode()
 
 st.set_page_config(page_title="Llamadas", page_icon="📞", layout="wide")
-require_login()
 
 today = date.today()
 
