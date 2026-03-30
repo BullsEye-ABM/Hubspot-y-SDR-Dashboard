@@ -62,8 +62,16 @@ def require_login():
 
         st.stop()
 
-    # ── Sesión activa pero dominio incorrecto ──
+    # ── Sesión activa y dominio correcto → mostrar usuario en sidebar ──
     email = (getattr(st.user, "email", "") or "").lower().strip()
+    name  = getattr(st.user, "name", "") or email
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown(f"👤 **{name}**  \n`{email}`")
+        st.button("🚪 Cerrar sesión", use_container_width=True,
+                  key="_logout_sidebar", on_click=st.logout)
+
+    # ── Sesión activa pero dominio incorrecto ──
     if not email.endswith(f"@{ALLOWED_DOMAIN}"):
         st.markdown("""
         <style>
