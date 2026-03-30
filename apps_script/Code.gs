@@ -300,27 +300,29 @@ function saveReunion(p) {
   // Matching flexible por header (tolera variaciones de nombre)
   function valueForHeader(h) {
     const hl = h.toString().toLowerCase().trim();
-    if (hl === "cliente")                                   return p.cliente            || "";
-    if (hl === "origen")                                    return p.origen             || "";
-    if (hl.includes("responsable"))                         return p.responsable        || "";
-    if (hl === "empresa")                                   return p.empresa            || "";
-    if (hl.includes("contacto"))                            return p.contactos          || "";
-    if (hl.includes("fecha") && hl.includes("agend"))       return p.fecha_agendamiento || "";
-    if (hl.includes("fecha") && hl.includes("reuni"))       return p.fecha_reunion      || "";
-    if (hl === "hora")                                      return p.hora               || "";
-    if (/pa[íi]s/.test(hl))                                return p.pais               || "";
-    if (hl === "realizado")                                 return p.realizado          || "";
-    if (hl.includes("sales") || hl.includes("manager"))    return p.sales_manager      || "";
-    if (hl === "cargo")                                     return p.cargo              || "";
-    if (hl === "correo")                                    return p.correo             || "";
-    if (hl.includes("tel"))                                 return p.telefono           || "";
-    if (hl.includes("industria"))                           return p.industria          || "";
-    if (hl.includes("comentario"))                          return p.comentario         || "";
-    if (hl.includes("propuesta") || hl.includes("oportunidad")) return p.propuesta     || "";
-    // Timestamp de envío: detecta variantes "Hora envío formulario" / "Fecha de registro"
-    if (hl.includes("hora")  && hl.includes("env"))        return now;
-    if (hl.includes("fecha") && hl.includes("env"))        return now;
-    if (hl.includes("fecha") && hl.includes("registro"))   return now;
+    if (hl === "cliente")                                        return p.cliente            || "";
+    if (hl === "origen")                                         return p.origen             || "";
+    if (hl.includes("responsable"))                              return p.responsable        || "";
+    // empresa debe ir ANTES de contacto: "Empresa del contacto" contiene "contacto"
+    // pero debe mapearse a empresa, no a contactos.
+    if (hl.includes("empresa"))                                  return p.empresa            || "";
+    if (hl.includes("contacto"))                                 return p.contactos          || "";
+    if (hl.includes("fecha") && hl.includes("agend"))            return p.fecha_agendamiento || "";
+    if (hl.includes("fecha") && hl.includes("reuni"))            return p.fecha_reunion      || "";
+    // "Hora envío formulario" va ANTES del check simple de "hora"
+    if (hl.includes("hora")  && hl.includes("env"))              return now;
+    if (hl.includes("fecha") && hl.includes("env"))              return now;
+    if (hl.includes("fecha") && hl.includes("registro"))         return now;
+    if (hl === "hora" || hl.includes("hora"))                    return p.hora               || "";
+    if (/pa[íi]s/.test(hl))                                     return p.pais               || "";
+    if (hl === "realizado")                                      return p.realizado          || "";
+    if (hl.includes("sales") || hl.includes("manager"))          return p.sales_manager      || "";
+    if (hl === "cargo")                                          return p.cargo              || "";
+    if (hl.includes("correo") || hl === "email")                 return p.correo             || "";
+    if (hl.includes("tel"))                                      return p.telefono           || "";
+    if (hl.includes("industria"))                                return p.industria          || "";
+    if (hl.includes("comentario"))                               return p.comentario         || "";
+    if (hl.includes("propuesta") || hl.includes("oportunidad"))  return p.propuesta          || "";
     return "";
   }
 
