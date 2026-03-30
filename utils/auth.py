@@ -25,11 +25,13 @@ def require_login():
     - Si no está autenticado, muestra pantalla de login.
     - Si el dominio no coincide, muestra error y botón para cerrar sesión.
     """
-    # Si no hay config de auth (dev local), no bloquear
+    # Si no hay config de auth (dev local / Streamlit sin soporte), no bloquear
+    if not hasattr(st, "user") or not hasattr(st, "login"):
+        return
     try:
         logged_in = st.user.is_logged_in
     except AttributeError:
-        return  # Versión de Streamlit sin soporte de auth, o sin secrets
+        return
 
     # ── Sin sesión activa → pantalla de login ──
     if not logged_in:
