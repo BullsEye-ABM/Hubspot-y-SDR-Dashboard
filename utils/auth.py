@@ -55,14 +55,10 @@ def require_login():
                 f"Inicia sesión con tu cuenta corporativa **@{ALLOWED_DOMAIN}** para continuar.",
                 icon="🔐",
             )
-            st.button(
-                "Iniciar sesión con Google",
-                use_container_width=True,
-                type="primary",
-                key="_login_btn",
-                on_click=st.login,
-                args=("google",),
-            )
+            # st.login() debe llamarse en el flujo directo del script,
+            # nunca dentro de un callback (on_click / if button).
+            # Llamado así, renderiza el botón de login de Google internamente.
+            st.login("google")
 
         st.stop()
 
@@ -83,6 +79,7 @@ def require_login():
                 f"Solo cuentas `@{ALLOWED_DOMAIN}` tienen acceso a este sistema.\n\n"
                 f"Cuenta actual: `{email}`",
             )
-            if st.button("🚪 Cerrar sesión", use_container_width=True, key="_logout_btn"):
-                st.logout()
+            # st.logout() también debe ir en el flujo directo
+            st.button("🚪 Cerrar sesión", use_container_width=True,
+                      key="_logout_btn", on_click=st.logout)
         st.stop()
