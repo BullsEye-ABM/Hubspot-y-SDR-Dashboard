@@ -58,13 +58,13 @@ function doGet(e) {
       return getClientsForSDR(ss, sdr);
     }
 
-    // Respuesta principal: intentar desde caché primero (meta y meetings por separado)
-    const cache      = CacheService.getScriptCache();
-    const cachedMeta = cache.get(CACHE_KEY_META);
-    const cachedMtgs = cache.get(CACHE_KEY_MEETINGS);
-    if (cachedMeta && cachedMtgs) {
-      const data = JSON.parse(cachedMeta);
-      data.meetings = JSON.parse(cachedMtgs);
+    // Respuesta principal: intentar desde caché primero
+    const cache    = CacheService.getScriptCache();
+    const metaJson = cacheGet(cache, CACHE_KEY_META);
+    const mtgsJson = cacheGet(cache, CACHE_KEY_MEETINGS);
+    if (metaJson && mtgsJson) {
+      const data = JSON.parse(metaJson);
+      data.meetings = JSON.parse(mtgsJson);
       return ContentService
         .createTextOutput(JSON.stringify({ status: "ok", data: data }))
         .setMimeType(ContentService.MimeType.JSON);
@@ -76,11 +76,11 @@ function doGet(e) {
     const meetings = getPendingMeetings(ss);
     data.meetings  = meetings;
 
-    // Cachear meta (pequeño) y meetings (grande) por separado para evitar límite 100KB
+    // Cachear meta y meetings con chunking para evitar límite 100KB de CacheService
     const metaOnly = { clientes: data.clientes, sdrs: data.sdrs, origenes: data.origenes,
                        paises: data.paises, industrias: data.industrias, propuestas: data.propuestas };
-    cache.put(CACHE_KEY_META, JSON.stringify(metaOnly), CACHE_TTL);
-    try { cache.put(CACHE_KEY_MEETINGS, JSON.stringify(meetings), CACHE_TTL); } catch(e) {}
+    cachePut(cache, CACHE_KEY_META,     JSON.stringify(metaOnly),  CACHE_TTL);
+    cachePut(cache, CACHE_KEY_MEETINGS, JSON.stringify(meetings),  CACHE_TTL);
 
     return ContentService
       .createTextOutput(JSON.stringify({ status: "ok", data: data }))
@@ -102,8 +102,8 @@ function doPost(e) {
     }
     // Invalidar caché para que el próximo doGet lea datos frescos
     const c = CacheService.getScriptCache();
-    c.remove(CACHE_KEY_META);
-    c.remove(CACHE_KEY_MEETINGS);
+    cacheRemove(c, CACHE_KEY_META);
+    cacheRemove(c, CACHE_KEY_MEETINGS);
     return jsonResponse({ status: "ok", message: "OK" });
   } catch (err) {
     return jsonResponse({ status: "error", message: err.toString() });
@@ -472,6 +472,47 @@ function jsonResponse(data) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Helpers de caché con chunking (supera el límite de 100KB por entrada) ──
+// Divide el valor en trozos de 90KB y los guarda en claves numeradas.
+// Así el tamaño efectivo es ilimitado (hasta el cupo total del script cache).
+const CHUNK_SIZE = 90000; // 90KB por chunk (límite es 100KB)
+
+function cachePut(cache, key, value, ttl) {
+  const chunks = [];
+  for (let i = 0; i < value.length; i += CHUNK_SIZE) {
+    chunks.push(value.substring(i, i + CHUNK_SIZE));
+  }
+  const entries = {};
+  entries[key + "__n"] = chunks.length.toString();
+  chunks.forEach((chunk, idx) => { entries[key + "__" + idx] = chunk; });
+  cache.putAll(entries, ttl);
+}
+
+function cacheGet(cache, key) {
+  const countStr = cache.get(key + "__n");
+  if (!countStr) return null;
+  const count = parseInt(countStr, 10);
+  const keys  = [];
+  for (let i = 0; i < count; i++) keys.push(key + "__" + i);
+  const parts = cache.getAll(keys);
+  let result  = "";
+  for (let i = 0; i < count; i++) {
+    const part = parts[key + "__" + i];
+    if (part === null || part === undefined) return null; // algún chunk expiró
+    result += part;
+  }
+  return result;
+}
+
+function cacheRemove(cache, key) {
+  const countStr = cache.get(key + "__n");
+  if (countStr) {
+    const count = parseInt(countStr, 10);
+    for (let i = 0; i < count; i++) cache.remove(key + "__" + i);
+    cache.remove(key + "__n");
+  }
 }
 
 // ── Helper: formatear celda de fecha → "DD/MM/YYYY" ───────────────────────
