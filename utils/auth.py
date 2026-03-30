@@ -55,13 +55,14 @@ def require_login():
                 f"Inicia sesión con tu cuenta corporativa **@{ALLOWED_DOMAIN}** para continuar.",
                 icon="🔐",
             )
-            if st.button(
+            st.button(
                 "Iniciar sesión con Google",
                 use_container_width=True,
                 type="primary",
                 key="_login_btn",
-            ):
-                st.login("google")
+                on_click=st.login,
+                args=("google",),
+            )
 
         st.stop()
 
