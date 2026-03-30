@@ -22,10 +22,13 @@ def require_login():
     """
     Verifica que haya sesión activa con cuenta @bullseye-abm.com.
     - Si auth no está configurada en secrets (dev local), pasa sin bloquear.
-    - Si no está autenticado, muestra pantalla de login.
+    - Si no está autenticado, muestra pantalla de login con botón.
     - Si el dominio no coincide, muestra error y botón para cerrar sesión.
+
+    Usa session_state para controlar cuándo llamar st.login(), evitando
+    que auto-redirija antes de que la sesión WebSocket esté establecida.
     """
-    # Si no hay config de auth (dev local / Streamlit sin soporte), no bloquear
+    # Si Streamlit no soporta auth, no bloquear (dev local)
     if not hasattr(st, "user") or not hasattr(st, "login"):
         return
     try:
@@ -35,6 +38,14 @@ def require_login():
 
     # ── Sin sesión activa → pantalla de login ──
     if not logged_in:
+        # Si el usuario ya hizo clic en "Ingresar", ahora sí llamamos st.login()
+        # (la sesión WebSocket ya está establecida en este punto)
+        if st.session_state.get("_do_login"):
+            del st.session_state["_do_login"]
+            st.login("google")
+            st.stop()
+
+        # Primera carga: mostrar pantalla con botón
         st.markdown("""
         <style>
         [data-testid="stSidebar"], [data-testid="collapsedControl"] { display: none; }
@@ -57,10 +68,18 @@ def require_login():
                 f"Inicia sesión con tu cuenta corporativa **@{ALLOWED_DOMAIN}** para continuar.",
                 icon="🔐",
             )
-            # st.login() debe llamarse en el flujo directo del script,
-            # nunca dentro de un callback (on_click / if button).
-            # Llamado así, renderiza el botón de login de Google internamente.
-            st.login("google")
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Botón custom: al hacer clic setea flag y hace rerun,
+            # en el siguiente rerun st.login() se llama con sesión activa
+            if st.button(
+                "🔑  Ingresar con Google",
+                use_container_width=True,
+                type="primary",
+                key="_login_btn",
+            ):
+                st.session_state["_do_login"] = True
+                st.rerun()
 
         st.stop()
 
@@ -89,7 +108,6 @@ def require_login():
                 f"Solo cuentas `@{ALLOWED_DOMAIN}` tienen acceso a este sistema.\n\n"
                 f"Cuenta actual: `{email}`",
             )
-            # st.logout() también debe ir en el flujo directo
             st.button("🚪 Cerrar sesión", use_container_width=True,
                       key="_logout_btn", on_click=st.logout)
         st.stop()
