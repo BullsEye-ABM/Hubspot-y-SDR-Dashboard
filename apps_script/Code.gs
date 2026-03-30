@@ -187,17 +187,18 @@ function getMaestraData(ss) {
   result.industrias.sort();
 
   // Leer opciones de validación de datos de la columna "Propuesta/Oportunidad"
+  // Una sola llamada batch (getDataValidations) en vez de hasta 50 llamadas individuales
   try {
     const outSheet = ss.getSheetByName(OUTPUT_TAB);
     if (outSheet && outSheet.getLastRow() > 1) {
-      const outHeaders = outSheet.getRange(1, 1, 1, outSheet.getLastColumn()).getValues()[0];
-      const outHeadersL = outHeaders.map(h => h.toString().trim().toLowerCase());
+      const outHeadersL = outSheet.getRange(1, 1, 1, outSheet.getLastColumn()).getValues()[0]
+        .map(h => h.toString().trim().toLowerCase());
       const colP = outHeadersL.findIndex(h => h.includes("propuesta") || h.includes("oportunidad"));
       if (colP >= 0) {
-        // Buscar en las primeras filas hasta encontrar una celda con validación de lista
-        const lastRow = Math.min(outSheet.getLastRow(), 50);
-        for (let r = 2; r <= lastRow; r++) {
-          const dv = outSheet.getRange(r, colP + 1).getDataValidation();
+        const numRows    = Math.min(outSheet.getLastRow() - 1, 50);
+        const validations = outSheet.getRange(2, colP + 1, numRows, 1).getDataValidations();
+        for (let r = 0; r < validations.length; r++) {
+          const dv = validations[r][0];
           if (dv && dv.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) {
             result.propuestas = dv.getCriteriaValues()[0] || [];
             break;
