@@ -14,8 +14,9 @@
 const SPREADSHEET_ID = "11vYlkzNlRwmEpGbeDNWpceDlhh36-B9gIgXU_emuRRk";
 const MAESTRA_TAB    = "Maestra IA";
 const OUTPUT_TAB     = "API Reuniones - IA";
-const CACHE_KEY      = "doget_response";
-const CACHE_TTL      = 300; // 5 minutos
+const CACHE_KEY_META     = "doget_meta";     // clientes, sdrs, propuestas, etc. (pequeño)
+const CACHE_KEY_MEETINGS = "doget_meetings"; // reuniones pendientes (grande, separado)
+const CACHE_TTL          = 300; // 5 minutos
 
 // Columnas del sheet de salida
 const OUTPUT_HEADERS = [
@@ -57,25 +58,32 @@ function doGet(e) {
       return getClientsForSDR(ss, sdr);
     }
 
-    // Respuesta principal: intentar desde caché primero
-    const cache    = CacheService.getScriptCache();
-    const cached   = cache.get(CACHE_KEY);
-    if (cached) {
+    // Respuesta principal: intentar desde caché primero (meta y meetings por separado)
+    const cache      = CacheService.getScriptCache();
+    const cachedMeta = cache.get(CACHE_KEY_META);
+    const cachedMtgs = cache.get(CACHE_KEY_MEETINGS);
+    if (cachedMeta && cachedMtgs) {
+      const data = JSON.parse(cachedMeta);
+      data.meetings = JSON.parse(cachedMtgs);
       return ContentService
-        .createTextOutput(cached)
+        .createTextOutput(JSON.stringify({ status: "ok", data: data }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
     // Abrir hoja una sola vez
-    const ss   = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const data = getMaestraData(ss);
-    data.meetings = getPendingMeetings(ss);
+    const ss       = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const data     = getMaestraData(ss);
+    const meetings = getPendingMeetings(ss);
+    data.meetings  = meetings;
 
-    const response = JSON.stringify({ status: "ok", data: data });
-    cache.put(CACHE_KEY, response, CACHE_TTL);
+    // Cachear meta (pequeño) y meetings (grande) por separado para evitar límite 100KB
+    const metaOnly = { clientes: data.clientes, sdrs: data.sdrs, origenes: data.origenes,
+                       paises: data.paises, industrias: data.industrias, propuestas: data.propuestas };
+    cache.put(CACHE_KEY_META, JSON.stringify(metaOnly), CACHE_TTL);
+    try { cache.put(CACHE_KEY_MEETINGS, JSON.stringify(meetings), CACHE_TTL); } catch(e) {}
 
     return ContentService
-      .createTextOutput(response)
+      .createTextOutput(JSON.stringify({ status: "ok", data: data }))
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
@@ -93,7 +101,9 @@ function doPost(e) {
       saveReunion(params);
     }
     // Invalidar caché para que el próximo doGet lea datos frescos
-    CacheService.getScriptCache().remove(CACHE_KEY);
+    const c = CacheService.getScriptCache();
+    c.remove(CACHE_KEY_META);
+    c.remove(CACHE_KEY_MEETINGS);
     return jsonResponse({ status: "ok", message: "OK" });
   } catch (err) {
     return jsonResponse({ status: "error", message: err.toString() });
