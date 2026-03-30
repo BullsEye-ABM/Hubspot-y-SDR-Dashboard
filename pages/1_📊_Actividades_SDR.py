@@ -10,8 +10,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from utils.hubspot import load_all_accounts
+from utils.auth import require_login
 
 st.set_page_config(page_title="Actividades SDR", page_icon="📊", layout="wide")
+require_login()
 
 # ── Sidebar ──────────────────────────────
 with st.sidebar:

@@ -12,6 +12,7 @@ import calendar
 
 from utils.hubspot import load_all_accounts
 from utils.sheets import get_meetings_from_sheets
+from utils.auth import require_login
 
 
 # ─────────────────────────────────────────
@@ -51,6 +52,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+require_login()  # ← bloquea acceso si no es @bullseye-abm.com
 
 st.markdown("""
 <style>

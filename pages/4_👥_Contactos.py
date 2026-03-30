@@ -9,8 +9,10 @@ import pandas as pd
 import plotly.express as px
 
 from utils.hubspot import load_all_accounts
+from utils.auth import require_login
 
 st.set_page_config(page_title="Contactos & Empresas", page_icon="👥", layout="wide")
+require_login()
 
 # ── Sidebar ──────────────────────────────
 with st.sidebar:

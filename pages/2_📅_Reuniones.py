@@ -15,8 +15,10 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from utils.sheets import get_meetings_from_sheets, get_maestra_activos
+from utils.auth import require_login
 
 st.set_page_config(page_title="Reuniones SDR", page_icon="📅", layout="wide")
+require_login()
 
 # ── Constantes de metas ────────────────────────────────────────────────────────
 _GOALS_YEAR   = 2026
