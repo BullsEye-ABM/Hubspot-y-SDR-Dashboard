@@ -58,7 +58,13 @@ def require_login():
             # st.login() debe llamarse en el flujo directo del script,
             # nunca dentro de un callback (on_click / if button).
             # Llamado así, renderiza el botón de login de Google internamente.
-            st.login("google")
+            try:
+                st.login("google")
+            except Exception as _auth_err:
+                st.error(
+                    f"🔴 **Error de configuración OAuth** — mensaje real:\n\n"
+                    f"`{type(_auth_err).__name__}: {_auth_err}`"
+                )
 
         st.stop()
 
