@@ -5,8 +5,6 @@ Pestaña: "Gestión Reuniones"
 """
 
 import calendar
-import json
-import os
 from datetime import date, timedelta
 
 import pandas as pd
@@ -14,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils.sheets import get_meetings_from_sheets, get_maestra_activos
+from utils.sheets import get_meetings_from_sheets, get_maestra_activos, load_goals_remote, save_goals_remote
 
 st.set_page_config(page_title="Reuniones SDR", page_icon="📅", layout="wide")
 
@@ -23,23 +21,14 @@ _GOALS_YEAR   = 2026
 _MONTH_KEYS   = [f"{_GOALS_YEAR}-{m:02d}" for m in range(1, 13)]
 _MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
-# ── Rutas ──────────────────────────────────────────────────────────────────────
-_HERE        = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(_HERE)
-GOALS_FILE   = os.path.join(PROJECT_ROOT, "data", "goals.json")
-os.makedirs(os.path.join(PROJECT_ROOT, "data"), exist_ok=True)
-
-
 def load_goals() -> dict:
-    if os.path.exists(GOALS_FILE):
-        with open(GOALS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"sdr": {}, "cliente": {}}
+    """Carga metas desde Apps Script (persistente) o devuelve vacío."""
+    return load_goals_remote(st.secrets)
 
 
-def save_goals(g: dict) -> None:
-    with open(GOALS_FILE, "w", encoding="utf-8") as f:
-        json.dump(g, f, ensure_ascii=False, indent=2)
+def save_goals(g: dict) -> bool:
+    """Guarda metas en Apps Script. Retorna True si tuvo éxito."""
+    return save_goals_remote(st.secrets, g)
 
 
 # ── Carga de datos ─────────────────────────────────────────────────────────────
@@ -926,8 +915,11 @@ with tab_metas:
         )
         if st.button("💾 Guardar metas SDR", use_container_width=True, type="primary", key="btn_save_sdr"):
             goals["sdr"] = extract_goals_from_df(sdr_edited)
-            save_goals(goals)
-            st.success("✅ Metas de SDR guardadas correctamente")
+            ok = save_goals(goals)
+            if ok:
+                st.success("✅ Metas de SDR guardadas en Google Sheets")
+            else:
+                st.error("❌ Error guardando metas. Verifica que la URL del Apps Script esté en secrets.")
             st.rerun()
     else:
         st.info("No se encontraron SDR activos en la Maestra IA.")
@@ -954,8 +946,11 @@ with tab_metas:
         )
         if st.button("💾 Guardar metas Clientes", use_container_width=True, type="primary", key="btn_save_cli"):
             goals["cliente"] = extract_goals_from_df(cli_edited)
-            save_goals(goals)
-            st.success("✅ Metas de clientes guardadas correctamente")
+            ok = save_goals(goals)
+            if ok:
+                st.success("✅ Metas de clientes guardadas en Google Sheets")
+            else:
+                st.error("❌ Error guardando metas. Verifica que la URL del Apps Script esté en secrets.")
             st.rerun()
     else:
         st.info("No se encontraron clientes activos en la Maestra IA.")

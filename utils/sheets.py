@@ -8,6 +8,7 @@ Sheet: "Metas equipo BullsEye / reuniones / oportunidades"
 Pestaña: "Gestión de reuniones"
 """
 
+import json
 import unicodedata
 import requests
 import pandas as pd
@@ -316,3 +317,52 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         df["sdr"] = df["sdr"].replace({"": "Sin asignar", "nan": "Sin asignar"})
 
     return df
+
+
+# ── Metas persistentes via Apps Script ────────────────────────────────────────
+# Las metas se guardan en una pestaña "Metas" del spreadsheet a través del
+# Apps Script (que ya tiene permisos de escritura). Así sobreviven redeploys.
+
+def _script_url(_secrets) -> str:
+    """Obtiene la URL del Apps Script desde secrets."""
+    try:
+        return _secrets["apps_script"]["url"]
+    except (KeyError, TypeError):
+        return ""
+
+
+def load_goals_remote(_secrets) -> dict:
+    """
+    Lee las metas desde el Apps Script (acción getGoals).
+    Retorna {"sdr": {...}, "cliente": {...}} o vacío si falla.
+    """
+    url = _script_url(_secrets)
+    if not url:
+        return {"sdr": {}, "cliente": {}}
+    try:
+        resp = requests.get(url, params={"action": "getGoals"}, timeout=30)
+        data = resp.json()
+        if data.get("status") == "ok":
+            return data.get("goals", {"sdr": {}, "cliente": {}})
+    except Exception:
+        pass
+    return {"sdr": {}, "cliente": {}}
+
+
+def save_goals_remote(_secrets, goals: dict) -> bool:
+    """
+    Guarda las metas en el Apps Script (acción saveGoals).
+    Retorna True si tuvo éxito.
+    """
+    url = _script_url(_secrets)
+    if not url:
+        return False
+    try:
+        resp = requests.post(
+            url,
+            data={"action": "saveGoals", "goals_json": json.dumps(goals, ensure_ascii=False)},
+            timeout=30,
+        )
+        return resp.json().get("status") == "ok"
+    except Exception:
+        return False

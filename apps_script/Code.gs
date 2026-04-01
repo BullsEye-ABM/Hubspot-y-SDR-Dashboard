@@ -45,6 +45,11 @@ function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) || "";
 
+    // Metas persistentes
+    if (action === "getGoals") {
+      return getGoals();
+    }
+
     // Estas acciones no usan caché (son llamadas puntuales legacy)
     if (action === "getMeetings") {
       const sdr     = (e.parameter && e.parameter.sdr)     || "";
@@ -95,7 +100,9 @@ function doGet(e) {
 function doPost(e) {
   try {
     const params = e.parameter;
-    if (params.action === "update") {
+    if (params.action === "saveGoals") {
+      saveGoals(params.goals_json || "{}");
+    } else if (params.action === "update") {
       updateReunion(params);
     } else {
       saveReunion(params);
@@ -468,6 +475,37 @@ function updateReunion(p) {
   if (colPropuesta >= 0 && p.propuesta !== undefined) {
     sheet.getRange(rowNum, colPropuesta + 1).setValue(p.propuesta);
   }
+}
+
+// ── Metas persistentes ────────────────────────────────────────────────────────
+// Se guardan como JSON en la celda A1 de la pestaña "Metas".
+// Así sobreviven reinicios de Streamlit Cloud.
+const GOALS_TAB = "Metas";
+
+function getGoals() {
+  try {
+    const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(GOALS_TAB);
+    if (!sheet) {
+      return jsonResponse({ status: "ok", goals: { sdr: {}, cliente: {} } });
+    }
+    const raw = sheet.getRange(1, 1).getValue();
+    const goals = raw ? JSON.parse(raw) : { sdr: {}, cliente: {} };
+    return jsonResponse({ status: "ok", goals: goals });
+  } catch (err) {
+    return jsonResponse({ status: "ok", goals: { sdr: {}, cliente: {} } });
+  }
+}
+
+function saveGoals(goalsJson) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(GOALS_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(GOALS_TAB);
+    // Ocultar la pestaña para que no moleste al equipo
+    sheet.hideSheet();
+  }
+  sheet.getRange(1, 1).setValue(goalsJson);
 }
 
 // ── Helper: respuesta JSON ─────────────────────────────────────────────────
