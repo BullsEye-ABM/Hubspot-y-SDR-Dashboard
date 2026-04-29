@@ -803,6 +803,27 @@ with tab_analisis:
     else:
         st.info("No hay datos de hora para generar el heatmap.")
 
+    st.subheader("📞 Heatmap: Día × Hora de llamada del SDR")
+    if (
+        "hora_envio_num" in df.columns
+        and df["hora_envio_num"].notna().any()
+        and "dia_envio_semana" in df.columns
+        and df["dia_envio_semana"].notna().any()
+    ):
+        df_heat2 = df[df["hora_envio_num"].notna() & df["dia_envio_semana"].notna()].copy()
+        df_heat2["Día"] = df_heat2["dia_envio_semana"].map(day_esp)
+        heat2 = df_heat2.groupby(["Día", "hora_envio_num"]).size().reset_index(name="Reuniones")
+        heat2_pivot = heat2.pivot_table(index="Día", columns="hora_envio_num", values="Reuniones", fill_value=0)
+        dias_ord2 = [day_esp[d] for d in day_order if day_esp.get(d) in heat2_pivot.index]
+        heat2_pivot = heat2_pivot.reindex(dias_ord2)
+        fig2 = px.imshow(heat2_pivot, labels=dict(x="Hora", y="Día", color="Reuniones"),
+                         color_continuous_scale="Blues", aspect="auto", height=280)
+        fig2.update_xaxes(tickmode="linear", tick0=8, dtick=1)
+        st.plotly_chart(fig2, use_container_width=True)
+        st.caption("Muestra en qué día y hora los SDR enviaron el formulario al agendar la reunión.")
+    else:
+        st.info("No hay datos de 'Hora envío formulario' para generar este heatmap.")
+
     col_l2, col_r2 = st.columns(2)
 
     with col_l2:

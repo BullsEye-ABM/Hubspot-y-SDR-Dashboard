@@ -52,6 +52,9 @@ COLUMN_MAP = {
     "comentario":         ["Comentario de la reunión", "COMENTARIO", "Comentario"],
     "comentario_ih":      ["comentario IH", "Comentario IH"],
     "flota":              ["Flota informada", "Flota"],
+    "hora_envio":         ["Hora envío formulario", "Hora envio formulario",
+                           "Hora Envío Formulario", "Hora Envio Formulario",
+                           "Hora envio", "Hora envío", "Timestamp"],
 }
 
 
@@ -286,6 +289,19 @@ def get_meetings_from_sheets(_secrets) -> pd.DataFrame:
         df["hora_num"] = hora_parsed.dt.hour
     else:
         df["hora_num"] = pd.NA
+
+    # ── Parsear hora_envio (timestamp del formulario) ─────────────────────────
+    if "hora_envio" in df.columns and df["hora_envio"].astype(str).str.strip().ne("").any():
+        envio_parsed = pd.to_datetime(
+            df["hora_envio"].astype(str).str.strip(),
+            dayfirst=True,
+            errors="coerce",
+        )
+        df["hora_envio_num"]    = envio_parsed.dt.hour
+        df["dia_envio_semana"]  = envio_parsed.dt.day_name()
+    else:
+        df["hora_envio_num"]   = pd.NA
+        df["dia_envio_semana"] = pd.NA
 
     # ── Limpiar strings clave ──────────────────────────────────────────────────
     for col in ["sdr", "ejecutivo", "kam", "cliente", "empresa", "cargo"]:
