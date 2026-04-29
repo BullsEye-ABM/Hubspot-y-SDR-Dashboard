@@ -824,6 +824,31 @@ with tab_analisis:
     else:
         st.info("No hay datos de 'Hora envío formulario' para generar este heatmap.")
 
+    st.subheader("❌ Heatmap: Día × Hora de reuniones caídas")
+    _caidas_estados = {"no realizada", "reagendar"}
+    if "hora_num" in df.columns and df["hora_num"].notna().any() and "dia_semana" in df.columns:
+        df_caidas = df[
+            df["estado"].str.lower().isin(_caidas_estados) &
+            df["hora_num"].notna() &
+            df["dia_semana"].notna()
+        ].copy()
+        if not df_caidas.empty:
+            df_caidas["Día"] = df_caidas["dia_semana"].map(day_esp)
+            heat3 = df_caidas.groupby(["Día", "hora_num"]).size().reset_index(name="Caídas")
+            heat3_pivot = heat3.pivot_table(index="Día", columns="hora_num", values="Caídas", fill_value=0)
+            dias_ord3 = [day_esp[d] for d in day_order if day_esp.get(d) in heat3_pivot.index]
+            heat3_pivot = heat3_pivot.reindex(dias_ord3)
+            fig3 = px.imshow(heat3_pivot, labels=dict(x="Hora", y="Día", color="Caídas"),
+                             color_continuous_scale="RdPu", aspect="auto", height=280)
+            fig3.update_xaxes(tickmode="linear", tick0=8, dtick=1)
+            st.plotly_chart(fig3, use_container_width=True)
+            n_caidas = len(df_caidas)
+            st.caption(f"Muestra en qué día y hora se concentran las reuniones No realizadas o Reagendadas ({n_caidas:,} en el período). Celdas más oscuras = mayor cantidad de caídas.")
+        else:
+            st.info("No hay reuniones caídas en el período seleccionado.")
+    else:
+        st.info("No hay datos de hora para generar este heatmap.")
+
     col_l2, col_r2 = st.columns(2)
 
     with col_l2:
