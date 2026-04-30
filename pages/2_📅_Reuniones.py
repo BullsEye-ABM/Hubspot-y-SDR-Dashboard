@@ -456,7 +456,15 @@ with c5:
     if st.button(f"❌ No realizadas\n\n**{no_real_total:,}**", key="btn_nore", use_container_width=True):
         _detail_dialog("Reuniones no realizadas", df[df["estado"] == "No realizada"])
 with c6:
-    st.metric("📈 Tasa realización", f"{tasa_total}%")
+    _tc  = "#15803d" if tasa_total >= 75 else "#b45309" if tasa_total >= 50 else "#b91c1c"
+    _tbg = "#f0fdf4" if tasa_total >= 75 else "#fffbeb" if tasa_total >= 50 else "#fef2f2"
+    _tbd = "#86efac" if tasa_total >= 75 else "#fcd34d" if tasa_total >= 50 else "#fca5a5"
+    st.markdown(f"""
+<div style="min-height:80px;padding:10px 14px;background:{_tbg};
+            border:1px solid {_tbd};border-radius:10px;">
+  <div style="font-size:.875rem;color:rgba(49,51,63,.65);margin-bottom:4px;">📈 Tasa realización</div>
+  <div style="font-size:1.9rem;font-weight:700;color:{_tc};line-height:1.2">{tasa_total}%</div>
+</div>""", unsafe_allow_html=True)
 with c7:
     if "propuesta" in df.columns and prop_total > 0:
         if st.button(f"📄 Con propuesta\n\n**{prop_total:,}**", key="btn_prop", use_container_width=True):
@@ -469,8 +477,6 @@ with c7:
 _sdr_goals = goals.get("sdr", {})
 _cli_goals = goals.get("cliente", {})
 
-# Si hay filtro activo de SDR, usar solo la meta de ese SDR.
-# Si se filtra por cliente (sin SDR específico), sumar metas solo de los SDRs que trabajan ese cliente.
 if sel_sdr != "Todos":
     meta_sdr_total = get_meta_periodo(sel_sdr, _sdr_goals, months_in_period)
 elif sel_client != "Todos" and "sdr" in df.columns:
@@ -479,7 +485,6 @@ elif sel_client != "Todos" and "sdr" in df.columns:
 else:
     meta_sdr_total = sum(get_meta_periodo(n, _sdr_goals, months_in_period) for n in _sdr_goals)
 
-# Si hay filtro activo de Cliente, usar solo la meta de ese cliente
 if sel_client != "Todos":
     meta_cli_total = get_meta_periodo(sel_client, _cli_goals, months_in_period)
 else:
@@ -488,16 +493,85 @@ else:
 cump_sdr = f"{round(realizadas_total / meta_sdr_total * 100, 1)}%" if meta_sdr_total > 0 else "Sin meta"
 cump_cli = f"{round(realizadas_total / meta_cli_total * 100, 1)}%" if meta_cli_total > 0 else "Sin meta"
 
-st.markdown("")   # pequeño espacio visual
+# ── Helpers para tarjetas de rendimiento ──────────────────────────────────────
+def _parse_pct(s: str):
+    try:
+        return float(str(s).replace("%", "").strip())
+    except Exception:
+        return None
+
+def _perf_colors(pct, ideal):
+    if pct is None:
+        return "#6b7280", "linear-gradient(135deg,#f9fafb,#f3f4f6)", "#e5e7eb"
+    if pct >= ideal:
+        return "#15803d", "linear-gradient(135deg,#f0fdf4,#dcfce7)", "#86efac"
+    if pct >= ideal * 0.7:
+        return "#b45309", "linear-gradient(135deg,#fffbeb,#fef3c7)", "#fcd34d"
+    return "#b91c1c", "linear-gradient(135deg,#fef2f2,#fee2e2)", "#fca5a5"
+
+def _meta_card_html(icon, label, value, sub, accent, bg, border):
+    return f"""
+<div style="background:{bg};border:1px solid {border};border-radius:12px;
+            padding:18px 20px;height:100%">
+  <div style="font-size:.7rem;font-weight:700;color:{accent};text-transform:uppercase;
+              letter-spacing:.07em;margin-bottom:8px">{icon} {label}</div>
+  <div style="font-size:2.2rem;font-weight:800;color:#111827;line-height:1.1">{value}</div>
+  <div style="font-size:.75rem;color:#9ca3af;margin-top:5px">{sub}</div>
+</div>"""
+
+def _cump_card_html(icon, label, value_str, pct_val, ideal, realized_n):
+    tc, bg, bc = _perf_colors(pct_val, ideal)
+    bar_w  = f"{min(100, pct_val or 0):.1f}"
+    needle = f"{min(100, ideal):.1f}"
+    status = "✓ En meta" if (pct_val or 0) >= ideal else "↓ Por debajo del ideal"
+    bar_html = ""
+    if pct_val is not None:
+        bar_html = f"""
+  <div style="position:relative;background:#e5e7eb;border-radius:4px;height:6px;margin-top:14px">
+    <div style="background:{tc};border-radius:4px;height:6px;width:{bar_w}%"></div>
+    <div style="position:absolute;top:-4px;left:{needle}%;width:2px;height:14px;
+                background:#374151;border-radius:2px" title="Ideal hoy: {ideal}%"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-top:5px">
+    <span style="font-size:.7rem;color:{tc};font-weight:600">{status}</span>
+    <span style="font-size:.7rem;color:#9ca3af">Ideal hoy: {ideal}%</span>
+  </div>"""
+    return f"""
+<div style="background:{bg};border:1px solid {bc};border-radius:12px;
+            padding:18px 20px;height:100%">
+  <div style="font-size:.7rem;font-weight:700;color:{tc};text-transform:uppercase;
+              letter-spacing:.07em;margin-bottom:8px">{icon} {label}</div>
+  <div style="font-size:2.2rem;font-weight:800;color:{tc};line-height:1.1">{value_str}</div>
+  <div style="font-size:.75rem;color:{tc}99;margin-top:4px">{realized_n:,} reuniones realizadas</div>
+  {bar_html}
+</div>"""
+
+st.markdown("<div style='margin-top:18px'></div>", unsafe_allow_html=True)
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("🎯 Meta SDR",             f"{meta_sdr_total:,}",
-          help=f"Meta de {'«' + sel_sdr + '»' if sel_sdr != 'Todos' else 'todos los SDR'} en el período filtrado")
-m2.metric("🎯 Meta Clientes",        f"{meta_cli_total:,}",
-          help=f"Meta de {'«' + sel_client + '»' if sel_client != 'Todos' else 'todos los clientes'} en el período filtrado")
-m3.metric("📊 Cumplimiento SDR",     cump_sdr,
-          help="Reuniones realizadas ÷ Meta SDR del período")
-m4.metric("📊 Cumplimiento Clientes", cump_cli,
-          help="Reuniones realizadas ÷ Meta Clientes del período")
+
+_sdr_sub      = f"{'«' + sel_sdr + '»' if sel_sdr != 'Todos' else 'Todos los SDR'}"
+_cli_sub      = f"{'«' + sel_client + '»' if sel_client != 'Todos' else 'Todos los clientes'}"
+_cump_sdr_pct = _parse_pct(cump_sdr)
+_cump_cli_pct = _parse_pct(cump_cli)
+
+with m1:
+    st.markdown(_meta_card_html(
+        "🎯", "Meta SDR", f"{meta_sdr_total:,}", _sdr_sub,
+        "#6366f1", "linear-gradient(135deg,#f8faff,#eef2ff)", "#c7d2fe"
+    ), unsafe_allow_html=True)
+with m2:
+    st.markdown(_meta_card_html(
+        "🎯", "Meta Clientes", f"{meta_cli_total:,}", _cli_sub,
+        "#0ea5e9", "linear-gradient(135deg,#f0f9ff,#e0f2fe)", "#7dd3fc"
+    ), unsafe_allow_html=True)
+with m3:
+    st.markdown(_cump_card_html(
+        "📊", "Cumplimiento SDR", cump_sdr, _cump_sdr_pct, ideal_pct, realizadas_total
+    ), unsafe_allow_html=True)
+with m4:
+    st.markdown(_cump_card_html(
+        "📊", "Cumplimiento Clientes", cump_cli, _cump_cli_pct, ideal_pct, realizadas_total
+    ), unsafe_allow_html=True)
 
 st.divider()
 
