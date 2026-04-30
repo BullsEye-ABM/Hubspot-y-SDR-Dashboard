@@ -398,40 +398,72 @@ def _pop_table(subset: pd.DataFrame):
     st.caption(f"{len(disp):,} registros")
     st.dataframe(disp, use_container_width=True, hide_index=True, height=min(400, 35 + len(disp) * 35))
 
+@st.dialog("Detalle reuniones", width="large")
+def _detail_dialog(title: str, subset: pd.DataFrame):
+    st.markdown(f"**{title}**")
+    _pop_table(subset)
+
+# CSS: hace que los botones de KPI se vean como tarjetas métricas clickeables
+st.markdown("""
+<div id="_kpi_sentinel"></div>
+<style>
+div.stMarkdown:has(#_kpi_sentinel) + div[data-testid="stHorizontalBlock"] .stButton button {
+    min-height: 80px;
+    padding: 10px 14px;
+    background: transparent;
+    border: 1px solid rgba(49,51,63,0.15);
+    border-radius: 10px;
+    text-align: left;
+    font-size: 0.875rem;
+    color: rgba(49,51,63,0.75);
+    line-height: 1.3;
+    transition: border-color 0.15s ease, background 0.1s ease;
+    cursor: pointer;
+}
+div.stMarkdown:has(#_kpi_sentinel) + div[data-testid="stHorizontalBlock"] .stButton button strong {
+    display: block;
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: rgb(49,51,63);
+    line-height: 1.2;
+    margin-top: 4px;
+}
+div.stMarkdown:has(#_kpi_sentinel) + div[data-testid="stHorizontalBlock"] .stButton button:hover {
+    border-color: rgba(49,51,63,0.35);
+    background: rgba(49,51,63,0.04);
+}
+div.stMarkdown:has(#_kpi_sentinel) + div[data-testid="stHorizontalBlock"] .stButton button:focus:not(:focus-visible) {
+    box-shadow: none;
+    outline: none;
+}
+</style>
+""", unsafe_allow_html=True)
+
 c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 with c1:
-    st.metric("📋 Agendadas", f"{total:,}")
-    with st.popover("ver listado", use_container_width=True):
-        st.markdown("**Todas las reuniones del período**")
-        _pop_table(df)
+    if st.button(f"📋 Agendadas\n\n**{total:,}**", key="btn_total", use_container_width=True):
+        _detail_dialog("Todas las reuniones del período", df)
 with c2:
-    st.metric("✅ Realizadas", f"{realizadas_total:,}")
-    with st.popover("ver listado", use_container_width=True):
-        st.markdown("**Reuniones realizadas**")
-        _pop_table(df[df["estado"] == "Realizada"])
+    if st.button(f"✅ Realizadas\n\n**{realizadas_total:,}**", key="btn_real", use_container_width=True):
+        _detail_dialog("Reuniones realizadas", df[df["estado"] == "Realizada"])
 with c3:
-    st.metric("⏳ Pendientes", f"{pendientes_total:,}")
-    with st.popover("ver listado", use_container_width=True):
-        st.markdown("**Reuniones pendientes**")
-        _pop_table(df[df["estado"] == "Pendiente"])
+    if st.button(f"⏳ Pendientes\n\n**{pendientes_total:,}**", key="btn_pend", use_container_width=True):
+        _detail_dialog("Reuniones pendientes", df[df["estado"] == "Pendiente"])
 with c4:
-    st.metric("🔄 Reagendar", f"{reagendar_total:,}")
-    with st.popover("ver listado", use_container_width=True):
-        st.markdown("**Reuniones a reagendar**")
-        _pop_table(df[df["estado"] == "Reagendar"])
+    if st.button(f"🔄 Reagendar\n\n**{reagendar_total:,}**", key="btn_reag", use_container_width=True):
+        _detail_dialog("Reuniones a reagendar", df[df["estado"] == "Reagendar"])
 with c5:
-    st.metric("❌ No realizadas", f"{no_real_total:,}")
-    with st.popover("ver listado", use_container_width=True):
-        st.markdown("**Reuniones no realizadas**")
-        _pop_table(df[df["estado"] == "No realizada"])
+    if st.button(f"❌ No realizadas\n\n**{no_real_total:,}**", key="btn_nore", use_container_width=True):
+        _detail_dialog("Reuniones no realizadas", df[df["estado"] == "No realizada"])
 with c6:
     st.metric("📈 Tasa realización", f"{tasa_total}%")
 with c7:
-    st.metric("📄 Con propuesta", f"{prop_total:,}")
-    if "propuesta" in df.columns:
-        with st.popover("ver listado", use_container_width=True):
-            st.markdown("**Reuniones con propuesta enviada**")
-            _pop_table(df[df["propuesta"].astype(str).str.strip().str.lower().isin(_SI_PROPUESTA)])
+    if "propuesta" in df.columns and prop_total > 0:
+        if st.button(f"📄 Con propuesta\n\n**{prop_total:,}**", key="btn_prop", use_container_width=True):
+            _detail_dialog("Reuniones con propuesta enviada",
+                           df[df["propuesta"].astype(str).str.strip().str.lower().isin(_SI_PROPUESTA)])
+    else:
+        st.metric("📄 Con propuesta", f"{prop_total:,}")
 
 # ── KPIs de metas ──────────────────────────────────────────────────────────────
 _sdr_goals = goals.get("sdr", {})
