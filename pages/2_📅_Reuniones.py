@@ -383,14 +383,55 @@ periodo_str = f"{start_date.strftime('%d/%m/%Y')} → {end_date.strftime('%d/%m/
 st.caption(f"Período: **{periodo_str}** · {total:,} reuniones con los filtros actuales")
 st.divider()
 
+# ── Columnas para el detalle en popovers ──────────────────────────────────────
+_pop_cols    = ["sdr", "cliente", "empresa", "contacto", "fecha_reunion", "hora", "estado"]
+_pop_labels  = {"sdr": "SDR", "cliente": "Cliente", "empresa": "Empresa",
+                "contacto": "Contacto", "fecha_reunion": "Fecha reunión",
+                "hora": "Hora", "estado": "Estado"}
+
+def _pop_table(subset: pd.DataFrame):
+    cols = [c for c in _pop_cols if c in subset.columns]
+    disp = subset[cols].copy()
+    if "fecha_reunion" in disp.columns:
+        disp["fecha_reunion"] = disp["fecha_reunion"].dt.strftime("%d/%m/%Y")
+    disp = disp.rename(columns=_pop_labels).sort_values("Fecha reunión", ascending=True) if "Fecha reunión" in disp.rename(columns=_pop_labels).columns else disp.rename(columns=_pop_labels)
+    st.caption(f"{len(disp):,} registros")
+    st.dataframe(disp, use_container_width=True, hide_index=True, height=min(400, 35 + len(disp) * 35))
+
 c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
-c1.metric("📋 Agendadas",       f"{total:,}")
-c2.metric("✅ Realizadas",       f"{realizadas_total:,}")
-c3.metric("⏳ Pendientes",       f"{pendientes_total:,}")
-c4.metric("🔄 Reagendar",        f"{reagendar_total:,}")
-c5.metric("❌ No realizadas",    f"{no_real_total:,}")
-c6.metric("📈 Tasa realización", f"{tasa_total}%")
-c7.metric("📄 Con propuesta",    f"{prop_total:,}")
+with c1:
+    st.metric("📋 Agendadas", f"{total:,}")
+    with st.popover("ver listado", use_container_width=True):
+        st.markdown("**Todas las reuniones del período**")
+        _pop_table(df)
+with c2:
+    st.metric("✅ Realizadas", f"{realizadas_total:,}")
+    with st.popover("ver listado", use_container_width=True):
+        st.markdown("**Reuniones realizadas**")
+        _pop_table(df[df["estado"] == "Realizada"])
+with c3:
+    st.metric("⏳ Pendientes", f"{pendientes_total:,}")
+    with st.popover("ver listado", use_container_width=True):
+        st.markdown("**Reuniones pendientes**")
+        _pop_table(df[df["estado"] == "Pendiente"])
+with c4:
+    st.metric("🔄 Reagendar", f"{reagendar_total:,}")
+    with st.popover("ver listado", use_container_width=True):
+        st.markdown("**Reuniones a reagendar**")
+        _pop_table(df[df["estado"] == "Reagendar"])
+with c5:
+    st.metric("❌ No realizadas", f"{no_real_total:,}")
+    with st.popover("ver listado", use_container_width=True):
+        st.markdown("**Reuniones no realizadas**")
+        _pop_table(df[df["estado"] == "No realizada"])
+with c6:
+    st.metric("📈 Tasa realización", f"{tasa_total}%")
+with c7:
+    st.metric("📄 Con propuesta", f"{prop_total:,}")
+    if "propuesta" in df.columns:
+        with st.popover("ver listado", use_container_width=True):
+            st.markdown("**Reuniones con propuesta enviada**")
+            _pop_table(df[df["propuesta"].astype(str).str.strip().str.lower().isin(_SI_PROPUESTA)])
 
 # ── KPIs de metas ──────────────────────────────────────────────────────────────
 _sdr_goals = goals.get("sdr", {})
