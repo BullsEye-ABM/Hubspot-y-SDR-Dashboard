@@ -108,6 +108,13 @@ def get_period_dates(preset: str):
         # Mes completo — incluye reuniones futuras (pendientes) del mes actual
         last_day = calendar.monthrange(t.year, t.month)[1]
         return date(t.year, t.month, 1), date(t.year, t.month, last_day)
+    elif preset == "Próximo mes":
+        if t.month == 12:
+            last_day = calendar.monthrange(t.year + 1, 1)[1]
+            return date(t.year + 1, 1, 1), date(t.year + 1, 1, last_day)
+        else:
+            last_day = calendar.monthrange(t.year, t.month + 1)[1]
+            return date(t.year, t.month + 1, 1), date(t.year, t.month + 1, last_day)
     elif preset == "Mes pasado":
         first = date(t.year, t.month, 1)
         last  = first - timedelta(days=1)
@@ -150,7 +157,7 @@ with st.sidebar:
     fecha_col = "fecha_agendamiento" if "agendamiento" in fecha_filtro else "fecha_reunion"
 
     preset_opts = [
-        "Este mes", "Mes pasado", "Últimos 3 meses", "Últimos 6 meses",
+        "Este mes", "Próximo mes", "Mes pasado", "Últimos 3 meses", "Últimos 6 meses",
         "Este año", "Año pasado", "Últimos 12 meses", "Todo", "Personalizado",
     ]
     preset = st.selectbox("Período", preset_opts, index=3)  # default: Últimos 6 meses
