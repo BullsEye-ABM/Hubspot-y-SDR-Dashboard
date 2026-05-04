@@ -21,7 +21,7 @@ ALLOWED_DOMAIN = "bullseye-abm.com"
 def require_login():
     """
     Verifica que haya sesión activa con cuenta @bullseye-abm.com.
-    - Si auth no está configurada en secrets (dev local), pasa sin bloquear.
+    - Si auth no está configurada en secrets (dev local o sin OAuth), pasa sin bloquear.
     - Si no está autenticado, muestra pantalla de login con botón.
     - Si el dominio no coincide, muestra error y botón para cerrar sesión.
 
@@ -30,6 +30,12 @@ def require_login():
     """
     # Si Streamlit no soporta auth, no bloquear (dev local)
     if not hasattr(st, "user") or not hasattr(st, "login"):
+        return
+    # Si [auth] no está configurado en secrets, no bloquear
+    try:
+        if not st.secrets.get("auth"):
+            return
+    except (FileNotFoundError, AttributeError):
         return
     try:
         logged_in = st.user.is_logged_in
