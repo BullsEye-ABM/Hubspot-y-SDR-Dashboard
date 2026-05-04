@@ -306,10 +306,16 @@ for d in deals_raw:
         "signals":       {"positive": [], "negative": [], "urgency": [], "has_text": False, "call_count": 0},
     })
 
-df = pd.DataFrame(rows)
+_COLS = [
+    "id","deal_name","stage_id","stage","stage_prob","stage_order","is_closed",
+    "amount","weighted","owner_id","owner","create_date","close_date",
+    "last_activity","days_created","days_activity","days_to_close",
+    "n_contacts","score","level","signals",
+]
+df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=_COLS)
 
 # ── Filters ────────────────────────────────────────────────────────────────
-if not show_closed:
+if not show_closed and not df.empty:
     df = df[~df["is_closed"]]
 
 if p_start and p_end and not df.empty:
