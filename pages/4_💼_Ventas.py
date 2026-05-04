@@ -315,6 +315,10 @@ _COLS = [
 df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=_COLS)
 
 # ── Filters ────────────────────────────────────────────────────────────────
+# Always remove Churn stages from the funnel
+if not df.empty:
+    df = df[~df["stage"].str.lower().str.contains("churn", na=False)]
+
 if not show_closed and not df.empty:
     df = df[~df["is_closed"]]
 
@@ -374,56 +378,94 @@ st.markdown(f"""
 
 
 # ─────────────────────────────────────────
-#  KPI Cards
+#  KPI helpers + dialog
 # ─────────────────────────────────────────
-total_deals    = len(df)
-total_value    = df["amount"].sum()
-weighted_value = df["weighted"].sum()
-hot_deals      = len(df[df["score"] >= 65])
-
 today = date.today()
-closing_month  = len(df[
-    df["close_date"].apply(
-        lambda x: x is not None and x.year == today.year and x.month == today.month
-    )
-]) if not df.empty else 0
 
-avg_score = round(df["score"].mean()) if not df.empty else 0
+total_deals    = len(df)
+total_value    = df["amount"].sum() if not df.empty else 0.0
+weighted_value = df["weighted"].sum() if not df.empty else 0.0
+df_hot_kpi     = df[df["score"] >= 65] if not df.empty else df
+hot_deals      = len(df_hot_kpi)
+df_closing     = df[df["close_date"].apply(
+    lambda x: x is not None and x.year == today.year and x.month == today.month
+)] if not df.empty else df
+closing_month  = len(df_closing)
+avg_score      = round(df["score"].mean()) if not df.empty else 0
+
+
+@st.dialog("Detalle de negocios", width="large")
+def _kpi_detail(title: str, sub_df: pd.DataFrame) -> None:
+    st.markdown(f"**{title}** — {len(sub_df)} negocio(s)")
+    if sub_df.empty:
+        st.info("Sin negocios en esta categoría.")
+        return
+    disp = sub_df[["deal_name", "stage", "amount", "owner", "close_date", "score"]].copy()
+    disp["amount"] = disp["amount"].apply(lambda v: f"${v:,.0f}" if v > 0 else "–")
+    disp["close_date"] = disp["close_date"].apply(
+        lambda d: d.strftime("%d/%m/%Y") if d is not None else "–"
+    )
+    disp["score"] = disp["score"].apply(lambda s: f"{int(s)}%")
+    disp.columns = ["Negocio", "Etapa", "Valor", "Owner", "Cierre estimado", "Score"]
+    st.dataframe(disp, use_container_width=True, hide_index=True)
+
 
 def _kcard(icon, label, value, sub, tc, bg, bc):
     return f"""
     <div style="background:{bg};border:1px solid {bc};border-radius:12px;
-                padding:16px 18px;height:100%">
+                padding:16px 18px 10px 18px">
       <div style="font-size:.68rem;font-weight:700;color:{tc};text-transform:uppercase;
                   letter-spacing:.07em;margin-bottom:6px">{icon} {label}</div>
       <div style="font-size:2rem;font-weight:800;color:#111827;line-height:1.1">{value}</div>
       <div style="font-size:.72rem;color:#9ca3af;margin-top:4px">{sub}</div>
     </div>"""
 
+
+# ─────────────────────────────────────────
+#  KPI Cards (clickables)
+# ─────────────────────────────────────────
 k1, k2, k3, k4, k5, k6 = st.columns(6)
+
 with k1:
     st.markdown(_kcard("🏢","Activos",f"{total_deals:,}","en pipeline",
         "#6366f1","linear-gradient(135deg,#f8faff,#eef2ff)","#c7d2fe"), unsafe_allow_html=True)
+    if st.button("Ver lista →", key="kbtn1", use_container_width=True):
+        _kpi_detail("Todos los negocios activos", df.sort_values("score", ascending=False))
+
 with k2:
     st.markdown(_kcard("💰","Valor total",f"${total_value:,.0f}","suma de deals",
         "#0ea5e9","linear-gradient(135deg,#f0f9ff,#e0f2fe)","#7dd3fc"), unsafe_allow_html=True)
+    if st.button("Ver lista →", key="kbtn2", use_container_width=True):
+        _kpi_detail("Negocios por valor", df.sort_values("amount", ascending=False))
+
 with k3:
     st.markdown(_kcard("⚖️","Valor ponderado",f"${weighted_value:,.0f}","ajustado por probabilidad",
         "#8b5cf6","linear-gradient(135deg,#faf5ff,#ede9fe)","#c4b5fd"), unsafe_allow_html=True)
+    if st.button("Ver lista →", key="kbtn3", use_container_width=True):
+        _kpi_detail("Negocios por valor ponderado", df.sort_values("weighted", ascending=False))
+
 with k4:
     tc4 = "#15803d" if hot_deals > 0 else "#6b7280"
     bg4 = "linear-gradient(135deg,#f0fdf4,#dcfce7)" if hot_deals > 0 else "linear-gradient(135deg,#f9fafb,#f3f4f6)"
     bc4 = "#86efac" if hot_deals > 0 else "#e5e7eb"
     st.markdown(_kcard("🔥","En cierre (≥65)",f"{hot_deals:,}","score alto",
         tc4, bg4, bc4), unsafe_allow_html=True)
+    if st.button("Ver lista →", key="kbtn4", use_container_width=True):
+        _kpi_detail("Negocios en cierre (score ≥ 65%)", df_hot_kpi.sort_values("score", ascending=False))
+
 with k5:
     tc5 = "#b45309" if closing_month > 0 else "#6b7280"
     st.markdown(_kcard("📅","Cierran este mes",f"{closing_month:,}","por close date",
         tc5,"linear-gradient(135deg,#fffbeb,#fef3c7)","#fcd34d"), unsafe_allow_html=True)
+    if st.button("Ver lista →", key="kbtn5", use_container_width=True):
+        _kpi_detail("Negocios que cierran este mes", df_closing.sort_values("close_date"))
+
 with k6:
     tc6 = "#15803d" if avg_score >= 55 else "#b45309" if avg_score >= 35 else "#b91c1c"
     st.markdown(_kcard("📊","Score prom.",f"{avg_score}%","basado en señales",
         tc6,"linear-gradient(135deg,#fff7f7,#fde8e8)","#fca5a5"), unsafe_allow_html=True)
+    if st.button("Ver lista →", key="kbtn6", use_container_width=True):
+        _kpi_detail("Todos los negocios por score", df.sort_values("score", ascending=False))
 
 st.markdown("<br>", unsafe_allow_html=True)
 
