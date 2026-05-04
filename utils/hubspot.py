@@ -1,54 +1,30 @@
 """
-HubSpot API Client - Multi-cuenta optimizado
-Mejoras de performance:
-  - Carga de cuentas en paralelo (ThreadPoolExecutor)
-  - get_owners cacheado para no repetir la llamada
-  - get_activities no repite fetch de llamadas (usa solo meetings + emails)
-  - Paginación de 200 registros por página (antes era 100)
+HubSpot API client for the Bullseye SDR dashboard.
+Single-account. Caches results 15 minutes via Streamlit's st.cache_data.
 """
 
-import re
+from __future__ import annotations
+
 import requests
-import pandas as pd
 import streamlit as st
-from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor, as_completed
-# Cache manual de owners: solo guarda resultados no vacíos y reintenta si falló
-_owners_cache: dict = {}
-# Cache de nombre interno de propiedad "SDR Asignado - [Cliente]"
-_prop_name_cache: dict = {}
+from typing import Any
 
+API_BASE = "https://api.hubapi.com"
+CACHE_TTL = 900  # 15 minutes
 
-def _normalize_phone(phone) -> str:
-    """Normaliza número de teléfono: solo dígitos, sin espacios ni símbolos."""
-    if not phone:
-        return ""
-    return re.sub(r"\D", "", str(phone))
+# Disposition UUID -> human label (from HubSpot Call outcome property)
+DISPOSITION_LABELS = {
+    "9d9162e7-6cf3-4944-bf63-4dff82258764": "Ocupado",
+    "f240bbac-87c9-4f6e-bf70-924b57d47db7": "Conectado",
+    "a4c4c377-d246-4b32-a13b-75a56a4cd0ff": "Dejo mensaje en directo",
+    "b2cf5968-551e-4856-9783-52b3da59a7d0": "Dejo mensaje de voz",
+    "73a0d17f-1163-4015-bdd5-ec830791da20": "Sin respuesta",
+    "17b47fee-58de-441e-a44c-c6300d46f273": "Numero incorrecto",
+}
 
+# Numbers to filter out as 2FA / verification noise
+KNOWN_2FA_NUMBERS = {"+14157234000"}
 
-def _phone_keys(phone) -> list:
-    """
-    Devuelve variantes del teléfono para matching robusto.
-    Números chilenos pueden guardarse con o sin código de país (56).
-    Ej: '+56912345678' → ['56912345678', '912345678']
-         '912345678'   → ['912345678', '56912345678']
-    """
-    norm = _normalize_phone(phone)
-    if not norm:
-        return []
-    keys = [norm]
-    # Si tiene 11 dígitos y empieza con 56 → también los últimos 9
-    if len(norm) == 11 and norm.startswith("56"):
-        keys.append(norm[2:])
-    # Si tiene 9 dígitos → también con prefijo 56
-    elif len(norm) == 9:
-        keys.append("56" + norm)
-    return keys
-
-
-# ─────────────────────────────────────────
-#  Helpers internos
-# ─────────────────────────────────────────
 
 def _headers(token: str) -> dict:
     return {
@@ -57,547 +33,166 @@ def _headers(token: str) -> dict:
     }
 
 
-def _since_ms(days: int) -> int:
-    return int((datetime.utcnow() - timedelta(days=days)).timestamp() * 1000)
+def _get_token() -> str:
+    """Read token from Streamlit secrets."""
+    try:
+        return st.secrets["hubspot"]["private_app_token"]
+    except (KeyError, FileNotFoundError):
+        st.error(
+            "Token de HubSpot no configurado. "
+            "Edita `.streamlit/secrets.toml` con `[hubspot]` -> `private_app_token`."
+        )
+        st.stop()
 
 
-def _search(obj_type: str, token: str, properties: list,
-            filter_property: str, days: int, limit: int = 200) -> list:
-    """
-    Búsqueda con filtro de fecha en la API.
-    Limit = 200 (máximo de HubSpot) → menos peticiones de paginación.
-    """
-    url   = f"https://api.hubapi.com/crm/v3/objects/{obj_type}/search"
-    since = _since_ms(days)
+# -----------------------------------------
+#  Owners
+# -----------------------------------------
 
-    body = {
-        "filterGroups": [{
-            "filters": [{
-                "propertyName": filter_property,
-                "operator":     "GTE",
-                "value":        str(since),
-            }]
-        }],
-        "properties": properties,
-        "limit":      limit,
-        "after":      0,
-    }
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def list_owners() -> list[dict[str, Any]]:
+    """Return all active owners. Each: {id, name, email}."""
+    token = _get_token()
+    owners: list[dict] = []
+    after: str | None = None
 
-    results = []
     while True:
-        try:
-            resp = requests.post(url, headers=_headers(token), json=body, timeout=30)
-        except Exception:
-            break
-        if resp.status_code != 200:
-            break
-        data = resp.json()
-        results.extend(data.get("results", []))
-        after = data.get("paging", {}).get("next", {}).get("after")
+        params = {"limit": 100}
+        if after:
+            params["after"] = after
+        r = requests.get(
+            f"{API_BASE}/crm/v3/owners",
+            headers=_headers(token),
+            params=params,
+            timeout=30,
+        )
+        r.raise_for_status()
+        data = r.json()
+        for o in data.get("results", []):
+            full_name = f"{o.get('firstName','').strip()} {o.get('lastName','').strip()}".strip()
+            owners.append({
+                "id": str(o["id"]),
+                "name": full_name or o.get("email", f"Owner {o['id']}"),
+                "email": o.get("email", ""),
+            })
+        paging = data.get("paging", {}).get("next", {})
+        after = paging.get("after")
         if not after:
             break
-        body["after"] = after
+
+    owners.sort(key=lambda x: x["name"].lower())
+    return owners
+
+
+# -----------------------------------------
+#  Generic CRM search with date filter
+# -----------------------------------------
+
+def _search(
+    object_type: str,
+    properties: list[str],
+    owner_id: str,
+    date_property: str,
+    start_ms: int,
+    end_ms: int,
+) -> list[dict]:
+    """Paginated CRM v3 search with owner + date range filters."""
+    token = _get_token()
+    url = f"{API_BASE}/crm/v3/objects/{object_type}/search"
+    results: list[dict] = []
+    after = 0
+
+    while True:
+        body = {
+            "filterGroups": [{
+                "filters": [
+                    {"propertyName": "hubspot_owner_id", "operator": "EQ", "value": owner_id},
+                    {"propertyName": date_property, "operator": "GTE", "value": str(start_ms)},
+                    {"propertyName": date_property, "operator": "LTE", "value": str(end_ms)},
+                ]
+            }],
+            "properties": properties,
+            "limit": 200,
+            "after": after,
+            "sorts": [{"propertyName": date_property, "direction": "DESCENDING"}],
+        }
+        r = requests.post(url, headers=_headers(token), json=body, timeout=60)
+        if r.status_code != 200:
+            st.warning(f"HubSpot {object_type} status {r.status_code}: {r.text[:200]}")
+            break
+        data = r.json()
+        results.extend(data.get("results", []))
+        paging = data.get("paging", {}).get("next", {})
+        after_str = paging.get("after")
+        if not after_str:
+            break
+        after = int(after_str)
 
     return results
 
 
-# ─────────────────────────────────────────
-#  Owners (SDRs) — cacheado para no repetir
-# ─────────────────────────────────────────
+# -----------------------------------------
+#  Public fetchers (cached)
+# -----------------------------------------
 
-def get_owners(token: str) -> dict:
-    """
-    Devuelve dict {owner_id_str: nombre_completo}.
-    Cache manual: solo guarda si la respuesta tiene datos (evita cachear errores).
-    Pagina correctamente para cuentas con muchos owners.
-    """
-    # Devolver desde cache solo si tiene datos
-    if token in _owners_cache and _owners_cache[token]:
-        return _owners_cache[token]
-
-    owners = {}
-    try:
-        after = None
-        while True:
-            params = {"limit": 100, "includeDeactivated": "true"}
-            if after:
-                params["after"] = after
-            resp = requests.get(
-                "https://api.hubapi.com/crm/v3/owners",
-                headers=_headers(token),
-                params=params,
-                timeout=30,
-            )
-            if resp.status_code != 200:
-                break
-            data = resp.json()
-            for o in data.get("results", []):
-                full_name = f"{o.get('firstName', '')} {o.get('lastName', '')}".strip()
-                owners[str(o["id"])] = full_name or o.get("email", str(o["id"]))
-            after = data.get("paging", {}).get("next", {}).get("after")
-            if not after:
-                break
-    except Exception:
-        pass
-
-    # Solo cachear si obtuvimos resultados
-    if owners:
-        _owners_cache[token] = owners
-
-    return owners
-
-
-def _owner_name(owners: dict, owner_id) -> str:
-    oid = str(owner_id) if owner_id else ""
-    return owners.get(oid, oid) if oid else ""
-
-
-# ─────────────────────────────────────────
-#  SDR por propiedad de contacto
-# ─────────────────────────────────────────
-
-def _get_all_sdr_properties(token: str) -> list:
-    """
-    Devuelve los nombres internos de TODAS las propiedades de contacto
-    cuya etiqueta o nombre interno contenga 'sdr asignado' (case-insensitive).
-    Ej: 'SDR Asignado - BullsEye', 'sdr asignado - lemu', 'SDR_asignado', etc.
-    Solo cachea si encontró resultados (evita cachear errores transitorios).
-    """
-    cache_key = f"{token}:__all_sdr_props__"
-    if cache_key in _prop_name_cache:
-        return _prop_name_cache[cache_key]
-
-    props = []
-    try:
-        resp = requests.get(
-            "https://api.hubapi.com/crm/v3/properties/contacts",
-            headers=_headers(token),
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            for prop in resp.json().get("results", []):
-                label = prop.get("label", "").lower()
-                name  = prop.get("name",  "").lower()
-                # Case-insensitive: detecta 'SDR Asignado', 'sdr asignado', etc.
-                if "sdr asignado" in label or "sdr asignado" in name:
-                    props.append(prop["name"])
-    except Exception:
-        pass
-
-    # Solo cachear cuando encontramos propiedades → permite reintento si falló
-    if props:
-        _prop_name_cache[cache_key] = props
-    return props
-
-
-def _sdr_from_contact_props(props_dict: dict, sdr_prop_names: list) -> str:
-    """Devuelve el primer valor no vacío entre las propiedades SDR del contacto."""
-    for p in sdr_prop_names:
-        val = (props_dict.get(p) or "").strip()
-        if val:
-            return val
-    return ""
-
-
-def _enrich_calls_with_sdr(token: str, df: pd.DataFrame, client_name: str) -> pd.DataFrame:
-    """
-    Enriquece las llamadas con el nombre real del SDR usando dos estrategias:
-
-    1. Asociaciones call → contacto en HubSpot.
-    2. Fallback por número de teléfono: busca contactos que tengan
-       CUALQUIER propiedad 'SDR Asignado - *' rellena y empareja por teléfono.
-    """
-    if df.empty:
-        return df
-
-    sdr_props = _get_all_sdr_properties(token)
-    if not sdr_props:
-        return df
-
-    df = df.copy()
-    batch_size = 100
-
-    # ── Estrategia 1: Asociaciones call → contacto ────────────────────────────
-    call_ids = df["id"].astype(str).tolist()
-    call_to_contact: dict = {}
-
-    for i in range(0, len(call_ids), batch_size):
-        batch = call_ids[i:i + batch_size]
-        try:
-            resp = requests.post(
-                "https://api.hubapi.com/crm/v4/associations/calls/contacts/batch/read",
-                headers=_headers(token),
-                json={"inputs": [{"id": cid} for cid in batch]},
-                timeout=30,
-            )
-            if resp.status_code == 200:
-                for item in resp.json().get("results", []):
-                    from_id = str(item["from"]["id"])
-                    to_list = item.get("to", [])
-                    if to_list:
-                        call_to_contact[from_id] = str(to_list[0]["toObjectId"])
-        except Exception:
-            pass
-
-    if call_to_contact:
-        contact_ids = list(set(call_to_contact.values()))
-        contact_to_sdr: dict = {}
-        for i in range(0, len(contact_ids), batch_size):
-            batch = contact_ids[i:i + batch_size]
-            try:
-                resp = requests.post(
-                    "https://api.hubapi.com/crm/v3/objects/contacts/batch/read",
-                    headers=_headers(token),
-                    json={"inputs": [{"id": cid} for cid in batch],
-                          "properties": sdr_props},
-                    timeout=30,
-                )
-                if resp.status_code == 200:
-                    for c in resp.json().get("results", []):
-                        sdr = _sdr_from_contact_props(c.get("properties", {}), sdr_props)
-                        if sdr:
-                            contact_to_sdr[str(c["id"])] = sdr
-            except Exception:
-                pass
-
-        sdr_map = {cid: contact_to_sdr[cid2]
-                   for cid, cid2 in call_to_contact.items()
-                   if cid2 in contact_to_sdr}
-        enriched = df["id"].astype(str).map(sdr_map)
-        df["sdr"] = enriched.where(enriched.notna() & (enriched != ""), df["sdr"])
-
-    # ── Estrategia 2: Fallback por número de teléfono ─────────────────────────
-    # Solo para llamadas que aún tienen un valor que parece ID numérico
-    unresolved = df["sdr"].str.match(r"^\d+$", na=False) | df["sdr"].str.strip().eq("")
-    if not unresolved.any():
-        return df
-
-    # Buscar contactos con CUALQUIER propiedad SDR rellena (OR entre filter groups)
-    # HubSpot permite hasta 10 filter groups por request; partimos en lotes si hay más
-    phone_to_sdr: dict = {}
-    HUBSPOT_MAX_FG = 10
-    prop_batches = [sdr_props[i:i+HUBSPOT_MAX_FG]
-                    for i in range(0, len(sdr_props), HUBSPOT_MAX_FG)]
-
-    for prop_batch in prop_batches:
-        after = ""
-        while True:
-            try:
-                body: dict = {
-                    "filterGroups": [
-                        {"filters": [{"propertyName": p, "operator": "HAS_PROPERTY"}]}
-                        for p in prop_batch
-                    ],
-                    "properties": ["phone", "mobilephone"] + prop_batch,
-                    "limit": 100,
-                }
-                if after:
-                    body["after"] = after
-                resp = requests.post(
-                    "https://api.hubapi.com/crm/v3/objects/contacts/search",
-                    headers=_headers(token),
-                    json=body,
-                    timeout=30,
-                )
-                if resp.status_code != 200:
-                    break
-                data = resp.json()
-                for c in data.get("results", []):
-                    sdr = _sdr_from_contact_props(c.get("properties", {}), prop_batch)
-                    if not sdr:
-                        continue
-                    for field in ("phone", "mobilephone"):
-                        for key in _phone_keys(c.get("properties", {}).get(field)):
-                            if key not in phone_to_sdr:
-                                phone_to_sdr[key] = sdr
-                after = (data.get("paging", {}).get("next", {}) or {}).get("after", "")
-                if not after or not data.get("results"):
-                    break
-            except Exception:
-                break
-
-    if phone_to_sdr:
-        def _resolve(row):
-            if not unresolved.loc[row.name]:
-                return row["sdr"]
-            for key in _phone_keys(row.get("telefono_raw", "")):
-                if key in phone_to_sdr:
-                    return phone_to_sdr[key]
-            return row["sdr"]
-        df["sdr"] = df.apply(_resolve, axis=1)
-
-    return df
-
-
-# ─────────────────────────────────────────
-#  Llamadas
-# ─────────────────────────────────────────
-
-CALL_PROPS = [
-    "hs_call_title", "hs_call_duration", "hs_call_status",
-    "hs_call_disposition", "hs_call_body", "hs_call_recording_url",
-    "hs_call_direction", "hubspot_owner_id", "hs_timestamp",
-    "hs_call_to_number",
-]
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def get_calls(token: str, account_name: str, client_name: str = "", days: int = 90) -> pd.DataFrame:
-    raw    = _search("calls", token, CALL_PROPS, "hs_timestamp", days)
-    owners = get_owners(token)
-    if not raw:
-        return pd.DataFrame()
-
-    rows = []
-    for r in raw:
-        p            = r.get("properties", {})
-        duration_ms  = p.get("hs_call_duration")
-        duration_sec = int(duration_ms) / 1000 if duration_ms else 0
-        rows.append({
-            "id":           r["id"],
-            "account":      account_name,
-            "fecha":        pd.to_datetime(p.get("hs_timestamp"), utc=True, errors="coerce"),
-            "sdr":          "",   # se rellena desde propiedades del contacto
-            "owner_name":   _owner_name(owners, p.get("hubspot_owner_id")),  # fallback
-            "estado":       p.get("hs_call_status", ""),
-            "disposicion":  p.get("hs_call_disposition", ""),
-            "duracion_seg": duration_sec,
-            "duracion_min": round(duration_sec / 60, 1),
-            "direccion":    p.get("hs_call_direction", ""),
-            "titulo":       p.get("hs_call_title", ""),
-            "notas":        p.get("hs_call_body", ""),
-            "grabacion":    p.get("hs_call_recording_url", ""),
-            "telefono_raw": p.get("hs_call_to_number", ""),
-        })
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-
-    df["fecha_local"] = df["fecha"].dt.tz_convert("America/Santiago")
-    df["dia"]         = df["fecha_local"].dt.date
-    df["hora"]        = df["fecha_local"].dt.hour
-    df["semana"]      = df["fecha_local"].dt.isocalendar().week.astype(int)
-    df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
-    df["conectada"]   = df["estado"].str.upper() == "COMPLETED"
-
-    # Estrategia 1: enriquecer con SDR desde propiedades del contacto asociado
-    df = _enrich_calls_with_sdr(token, df, client_name)
-
-    # Estrategia 2 (fallback): si sdr sigue vacío o es ID numérico, usar owner_name.
-    # El filtro de activos en Llamadas.py se encargará de descartar owners no-SDR.
-    def _resolve_sdr(row):
-        sdr = str(row["sdr"]).strip()
-        if not sdr or sdr.isdigit():
-            owner = str(row.get("owner_name", "")).strip()
-            return owner if owner and not owner.isdigit() else ""
-        return sdr
-
-    df["sdr"] = df.apply(_resolve_sdr, axis=1)
-    return df
-
-
-# ─────────────────────────────────────────
-#  Contactos
-# ─────────────────────────────────────────
-
-CONTACT_PROPS = [
-    "firstname", "lastname", "email", "company",
-    "jobtitle", "phone", "hubspot_owner_id",
-    "createdate", "hs_lead_status",
-]
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def get_contacts(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
-    raw    = _search("contacts", token, CONTACT_PROPS, "createdate", days)
-    owners = get_owners(token)
-    if not raw:
-        return pd.DataFrame()
-
-    rows = []
+@st.cache_data(ttl=CACHE_TTL, show_spinner="Cargando llamadas...")
+def get_calls(owner_id: str, start_ms: int, end_ms: int) -> list[dict]:
+    """Return call objects with key properties."""
+    props = [
+        "hs_call_title", "hs_call_body", "hs_call_summary",
+        "hs_call_disposition", "hs_call_duration", "hs_call_direction",
+        "hs_call_status", "hs_timestamp", "hs_call_from_number",
+        "hs_call_to_number", "hs_call_recording_url",
+    ]
+    raw = _search("calls", props, owner_id, "hs_timestamp", start_ms, end_ms)
+    out = []
     for r in raw:
         p = r.get("properties", {})
-        rows.append({
-            "id":             r["id"],
-            "account":        account_name,
-            "nombre":         f"{p.get('firstname', '')} {p.get('lastname', '')}".strip(),
-            "email":          p.get("email", ""),
-            "empresa":        p.get("company", ""),
-            "cargo":          p.get("jobtitle", ""),
-            "sdr":            _owner_name(owners, p.get("hubspot_owner_id")),
-            "fecha_creacion": pd.to_datetime(p.get("createdate"), utc=True, errors="coerce"),
-            "estado_lead":    p.get("hs_lead_status", ""),
+        # Filter out 2FA / verification calls
+        if p.get("hs_call_from_number") in KNOWN_2FA_NUMBERS:
+            continue
+        out.append({
+            "id": r["id"],
+            "title": p.get("hs_call_title") or "",
+            "body": p.get("hs_call_body") or "",
+            "summary": p.get("hs_call_summary") or "",
+            "disposition": DISPOSITION_LABELS.get(p.get("hs_call_disposition") or "", "Sin disposicion"),
+            "duration_ms": int(p.get("hs_call_duration") or 0),
+            "direction": p.get("hs_call_direction") or "",
+            "status": p.get("hs_call_status") or "",
+            "timestamp": p.get("hs_timestamp") or "",
+            "from_number": p.get("hs_call_from_number") or "",
+            "to_number": p.get("hs_call_to_number") or "",
         })
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    df["fecha_local"] = df["fecha_creacion"].dt.tz_convert("America/Santiago")
-    df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
-    return df
+    return out
 
 
-# ─────────────────────────────────────────
-#  Empresas
-# ─────────────────────────────────────────
-
-COMPANY_PROPS = [
-    "name", "domain", "industry", "city", "country",
-    "hubspot_owner_id", "createdate", "numberofemployees",
-    "cliente_bullseye_empresa",
-]
+@st.cache_data(ttl=CACHE_TTL, show_spinner="Cargando contactos...")
+def get_contacts(owner_id: str, start_ms: int, end_ms: int) -> list[dict]:
+    props = ["firstname", "lastname", "email", "createdate", "lifecyclestage"]
+    raw = _search("contacts", props, owner_id, "createdate", start_ms, end_ms)
+    return [{"id": r["id"], **r.get("properties", {})} for r in raw]
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
-def get_companies(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
-    raw    = _search("companies", token, COMPANY_PROPS, "createdate", days)
-    owners = get_owners(token)
-    if not raw:
-        return pd.DataFrame()
-
-    rows = []
-    for r in raw:
-        p = r.get("properties", {})
-        rows.append({
-            "id":               r["id"],
-            "account":          account_name,
-            "empresa":          p.get("name", ""),
-            "industria":        p.get("industry", ""),
-            "ciudad":           p.get("city", ""),
-            "sdr":              _owner_name(owners, p.get("hubspot_owner_id")),
-            "cliente_bullseye": p.get("cliente_bullseye_empresa", ""),
-            "fecha_creacion":   pd.to_datetime(p.get("createdate"), utc=True, errors="coerce"),
-        })
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    df["fecha_local"] = df["fecha_creacion"].dt.tz_convert("America/Santiago")
-    df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
-    return df
+@st.cache_data(ttl=CACHE_TTL, show_spinner="Cargando empresas...")
+def get_companies(owner_id: str, start_ms: int, end_ms: int) -> list[dict]:
+    props = ["name", "domain", "createdate"]
+    raw = _search("companies", props, owner_id, "createdate", start_ms, end_ms)
+    return [{"id": r["id"], **r.get("properties", {})} for r in raw]
 
 
-# ─────────────────────────────────────────
-#  Actividades (solo Meetings + Emails, no Calls porque ya se cargan)
-# ─────────────────────────────────────────
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def get_activities(token: str, account_name: str, days: int = 90) -> pd.DataFrame:
-    """
-    Carga meetings y emails de HubSpot.
-    Las llamadas NO se incluyen aquí (ya vienen de get_calls) para evitar
-    duplicar la descarga. En la página de Actividades se unen ambos.
-    """
-    owners = get_owners(token)
-    frames = []
-
-    type_config = {
-        "meetings": ("Reunión HubSpot", "hs_timestamp", ["hubspot_owner_id", "hs_timestamp", "hs_meeting_title"]),
-        "emails":   ("Email",           "hs_timestamp", ["hubspot_owner_id", "hs_timestamp"]),
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def count_owned_total(object_type: str, owner_id: str) -> int:
+    """Total objects owned by user (no date filter)."""
+    token = _get_token()
+    url = f"{API_BASE}/crm/v3/objects/{object_type}/search"
+    body = {
+        "filterGroups": [{"filters": [
+            {"propertyName": "hubspot_owner_id", "operator": "EQ", "value": owner_id}
+        ]}],
+        "limit": 1,
     }
-
-    for obj_type, (label, filter_prop, props) in type_config.items():
-        raw = _search(obj_type, token, props, filter_prop, days)
-        for r in raw:
-            p = r.get("properties", {})
-            frames.append({
-                "id":      r["id"],
-                "account": account_name,
-                "tipo":    label,
-                "sdr":     _owner_name(owners, p.get("hubspot_owner_id")),
-                "fecha":   pd.to_datetime(p.get("hs_timestamp"), utc=True, errors="coerce"),
-            })
-
-    if not frames:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(frames).dropna(subset=["fecha"])
-    df["fecha_local"] = df["fecha"].dt.tz_convert("America/Santiago")
-    df["dia"]         = df["fecha_local"].dt.date
-    df["semana"]      = df["fecha_local"].dt.isocalendar().week.astype(int)
-    df["mes"]         = df["fecha_local"].dt.to_period("M").astype(str)
-    return df
-
-
-# ─────────────────────────────────────────
-#  Carga multi-cuenta EN PARALELO
-# ─────────────────────────────────────────
-
-def _load_single_account(acc: dict, days: int) -> dict:
-    """Carga los 4 datasets de una sola cuenta."""
-    name, token = acc["name"], acc["token"]
-    client = acc.get("client", name)
-    try:
-        return {
-            "name":       name,
-            "calls":      get_calls(token, name, client, days),
-            "contacts":   get_contacts(token, name, days),
-            "companies":  get_companies(token, name, days),
-            "activities": get_activities(token, name, days),
-        }
-    except Exception as e:
-        return {
-            "name":       name,
-            "calls":      pd.DataFrame(),
-            "contacts":   pd.DataFrame(),
-            "companies":  pd.DataFrame(),
-            "activities": pd.DataFrame(),
-            "error":      str(e),
-        }
-
-
-def load_all_accounts(secrets, days: int = 90) -> dict:
-    """
-    Carga todas las cuentas HubSpot EN PARALELO.
-    Cada cuenta se carga en su propio thread, reduciendo el tiempo total
-    de N×T a ~T (donde T es el tiempo de la cuenta más lenta).
-    También carga la lista de SDRs activos desde la Maestra IA.
-    """
-    accounts = _parse_accounts(secrets)
-
-    all_calls, all_contacts, all_companies, all_activities = [], [], [], []
-
-    # Carga paralela — un thread por cuenta
-    with ThreadPoolExecutor(max_workers=min(len(accounts), 6)) as executor:
-        future_to_acc = {
-            executor.submit(_load_single_account, acc, days): acc
-            for acc in accounts
-        }
-        for future in as_completed(future_to_acc):
-            result = future.result()
-            if "error" in result:
-                st.warning(f"Error cargando cuenta '{result['name']}': {result['error']}")
-            all_calls.append(result["calls"])
-            all_contacts.append(result["contacts"])
-            all_companies.append(result["companies"])
-            all_activities.append(result["activities"])
-
-    def safe_concat(frames):
-        valid = [f for f in frames if not f.empty]
-        return pd.concat(valid, ignore_index=True) if valid else pd.DataFrame()
-
-    return {
-        "calls":         safe_concat(all_calls),
-        "contacts":      safe_concat(all_contacts),
-        "companies":     safe_concat(all_companies),
-        "activities":    safe_concat(all_activities),
-        "account_names": [a["name"] for a in accounts],
-    }
-
-
-def _parse_accounts(secrets) -> list:
-    accounts = []
-    i = 1
-    while True:
-        key = f"hubspot_account_{i}"
-        if key not in secrets:
-            break
-        acc = secrets[key]
-        accounts.append({
-            "name":   acc["name"],
-            "token":  acc["token"],
-            "client": acc.get("client", acc["name"]),
-        })
-        i += 1
-    return accounts
+    r = requests.post(url, headers=_headers(token), json=body, timeout=30)
+    if r.status_code != 200:
+        return 0
+    return r.json().get("total", 0)
