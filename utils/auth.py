@@ -20,16 +20,14 @@ ALLOWED_DOMAIN = "bullseye-abm.com"
 
 def require_login():
     """
-    Verifica que haya sesión activa con cuenta @bullseye-abm.com.
-    - Si auth no está configurada en secrets (dev local o sin OAuth), pasa sin bloquear.
-    - Si no está autenticado, muestra pantalla de login con botón.
-    - Si el dominio no coincide, muestra error y botón para cerrar sesión.
-
-    Usa session_state para controlar cuándo llamar st.login(), evitando
-    que auto-redirija antes de que la sesión WebSocket esté establecida.
+    Auth deshabilitada temporalmente.
+    Para reactivar: descomentar el bloque de abajo y configurar [auth] en secrets.
     """
+    return
+
+    # ── BLOQUE DESHABILITADO ── descomenta para reactivar auth Google ──────────
     # Si Streamlit no soporta auth, no bloquear (dev local)
-    if not hasattr(st, "user") or not hasattr(st, "login"):
+    if not hasattr(st, "user") or not hasattr(st, "login"):  # noqa: unreachable
         return
     # Si [auth] no está configurado en secrets, no bloquear
     try:
