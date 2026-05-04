@@ -196,3 +196,147 @@ def count_owned_total(object_type: str, owner_id: str) -> int:
     if r.status_code != 200:
         return 0
     return r.json().get("total", 0)
+
+
+# -----------------------------------------
+#  Deals / Pipeline (Ventas)
+# -----------------------------------------
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def get_pipelines() -> list[dict]:
+    """Return all deal pipelines with their stages."""
+    token = _get_token()
+    r = requests.get(
+        f"{API_BASE}/crm/v3/pipelines/deals",
+        headers=_headers(token),
+        timeout=30,
+    )
+    if r.status_code != 200:
+        return []
+    return r.json().get("results", [])
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner="Cargando negocios...")
+def get_deals_by_pipeline(pipeline_id: str) -> list[dict]:
+    """Return ALL deals from a specific pipeline (no date filter)."""
+    token = _get_token()
+    url = f"{API_BASE}/crm/v3/objects/deals/search"
+    props = [
+        "dealname", "dealstage", "pipeline", "hubspot_owner_id",
+        "createdate", "closedate", "amount", "hs_lastmodifieddate",
+        "hs_deal_stage_probability", "notes_last_contacted",
+        "num_associated_contacts",
+    ]
+    results = []
+    after = 0
+    while True:
+        body = {
+            "filterGroups": [{"filters": [
+                {"propertyName": "pipeline", "operator": "EQ", "value": pipeline_id},
+            ]}],
+            "properties": props,
+            "limit": 200,
+            "after": after,
+            "sorts": [{"propertyName": "hs_lastmodifieddate", "direction": "DESCENDING"}],
+        }
+        r = requests.post(url, headers=_headers(token), json=body, timeout=60)
+        if r.status_code != 200:
+            st.warning(f"HubSpot deals {r.status_code}: {r.text[:200]}")
+            break
+        data = r.json()
+        results.extend(data.get("results", []))
+        after_str = (data.get("paging") or {}).get("next", {}).get("after")
+        if not after_str:
+            break
+        after = int(after_str)
+    return results
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner="Cargando transcripciones DIIO...")
+def get_deal_calls(deal_ids: tuple) -> dict[str, list[dict]]:
+    """
+    Return calls (with DIIO summaries) associated with deals.
+    deal_ids must be a tuple for st.cache_data hashing.
+    Returns: {deal_id: [call_dict, ...]}
+    """
+    token = _get_token()
+    if not deal_ids:
+        return {}
+
+    batch_size = 100
+    deal_to_call_ids: dict[str, list[str]] = {}
+
+    # Step 1: Get call IDs associated with each deal
+    for i in range(0, len(deal_ids), batch_size):
+        batch = list(deal_ids[i:i + batch_size])
+        try:
+            r = requests.post(
+                f"{API_BASE}/crm/v4/associations/deals/calls/batch/read",
+                headers=_headers(token),
+                json={"inputs": [{"id": did} for did in batch]},
+                timeout=30,
+            )
+            if r.status_code == 200:
+                for item in r.json().get("results", []):
+                    did = str(item["from"]["id"])
+                    cids = [str(a["toObjectId"]) for a in item.get("to", [])]
+                    if cids:
+                        deal_to_call_ids[did] = cids
+        except Exception:
+            pass
+
+    if not deal_to_call_ids:
+        return {}
+
+    # Step 2: Fetch call details in batches
+    all_call_ids = list({cid for cids in deal_to_call_ids.values() for cid in cids})
+    call_details: dict[str, dict] = {}
+
+    for i in range(0, len(all_call_ids), batch_size):
+        batch = all_call_ids[i:i + batch_size]
+        try:
+            r = requests.post(
+                f"{API_BASE}/crm/v3/objects/calls/batch/read",
+                headers=_headers(token),
+                json={
+                    "inputs": [{"id": cid} for cid in batch],
+                    "properties": [
+                        "hs_call_title", "hs_call_body", "hs_call_summary",
+                        "hs_timestamp", "hs_call_disposition", "hs_call_duration",
+                    ],
+                },
+                timeout=60,
+            )
+            if r.status_code == 200:
+                for call in r.json().get("results", []):
+                    call_details[str(call["id"])] = call.get("properties", {})
+        except Exception:
+            pass
+
+    # Step 3: Build deal -> calls mapping (sorted newest first)
+    result: dict[str, list[dict]] = {}
+    for did, cids in deal_to_call_ids.items():
+        calls = []
+        for cid in cids:
+            cd = call_details.get(cid)
+            if not cd:
+                continue
+            summary = cd.get("hs_call_summary") or ""
+            body = cd.get("hs_call_body") or ""
+            if summary or body:
+                calls.append({
+                    "id": cid,
+                    "title": cd.get("hs_call_title") or "Llamada",
+                    "summary": summary,
+                    "body": body,
+                    "timestamp": cd.get("hs_timestamp") or "",
+                    "disposition": DISPOSITION_LABELS.get(
+                        cd.get("hs_call_disposition") or "", "Sin disposicion"
+                    ),
+                    "duration_ms": int(cd.get("hs_call_duration") or 0),
+                })
+        if calls:
+            calls.sort(key=lambda x: x["timestamp"], reverse=True)
+            result[did] = calls
+
+    return result
