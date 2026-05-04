@@ -153,40 +153,57 @@ def _score_deal(stage_prob: float, signals: dict,
 # ─────────────────────────────────────────
 #  Fetch pipelines + sidebar
 # ─────────────────────────────────────────
-pipelines = get_pipelines()
-
-if not pipelines:
-    st.error("No se pudieron cargar los pipelines de HubSpot.")
-    st.stop()
-
-pipeline_labels = [p.get("label", p["id"]) for p in pipelines]
-pipeline_map    = {p.get("label", p["id"]): p for p in pipelines}
+pipelines, pipelines_error = get_pipelines()
 
 with st.sidebar:
     st.markdown("### Filtros")
 
-    # Pipeline
-    default_pipe = next(
-        (lbl for lbl in pipeline_labels
-         if any(kw in lbl.lower() for kw in ["abm", "consultor", "bullseye"])),
-        pipeline_labels[0],
-    )
-    pipeline_label = st.selectbox("Pipeline", pipeline_labels,
-                                  index=pipeline_labels.index(default_pipe))
-    pipeline      = pipeline_map[pipeline_label]
-    pipeline_id   = pipeline["id"]
-    stages_raw    = sorted(pipeline.get("stages", []), key=lambda s: s.get("displayOrder", 0))
-    stage_id_to_label = {s["id"]: s["label"] for s in stages_raw}
-    stage_id_to_prob  = {s["id"]: float(s.get("metadata", {}).get("probability", 0)) for s in stages_raw}
-    stage_id_to_order = {s["id"]: i for i, s in enumerate(stages_raw)}
+    if pipelines_error:
+        # Token sin scope de deals — permitir ingresar pipeline ID manualmente
+        st.warning(
+            "El token de HubSpot no tiene permisos para leer pipelines.\n\n"
+            "**Scopes necesarios:**\n"
+            "- `crm.objects.deals.read`\n"
+            "- `crm.schemas.deals.read`\n\n"
+            "Mientras tanto, ingresá el Pipeline ID manualmente:",
+            icon="⚠️",
+        )
+        manual_pipeline_id = st.text_input(
+            "Pipeline ID",
+            value="637168513",
+            help="Encontralo en HubSpot → CRM → Deals → Acciones → Editar pipeline → URL",
+        )
+        pipeline_id        = manual_pipeline_id.strip()
+        pipeline_label     = f"Pipeline {pipeline_id}"
+        stages_raw         = []
+        stage_id_to_label  = {}
+        stage_id_to_prob   = {}
+        stage_id_to_order  = {}
+        CLOSED_STAGE_IDS   = set()
+    else:
+        pipeline_labels = [p.get("label", p["id"]) for p in pipelines]
+        pipeline_map    = {p.get("label", p["id"]): p for p in pipelines}
 
-    # Identificar etapas cerradas (probability = 1 o label contiene "cerrado/ganado/perdido")
-    CLOSED_STAGE_IDS = {
-        s["id"] for s in stages_raw
-        if float(s.get("metadata", {}).get("probability", 0)) >= 1.0
-        or any(kw in s.get("label", "").lower()
-               for kw in ["cerrado", "ganado", "perdido", "won", "lost", "closed"])
-    }
+        default_pipe = next(
+            (lbl for lbl in pipeline_labels
+             if any(kw in lbl.lower() for kw in ["abm", "consultor", "bullseye"])),
+            pipeline_labels[0],
+        )
+        pipeline_label = st.selectbox("Pipeline", pipeline_labels,
+                                      index=pipeline_labels.index(default_pipe))
+        pipeline       = pipeline_map[pipeline_label]
+        pipeline_id    = pipeline["id"]
+        stages_raw     = sorted(pipeline.get("stages", []), key=lambda s: s.get("displayOrder", 0))
+        stage_id_to_label = {s["id"]: s["label"] for s in stages_raw}
+        stage_id_to_prob  = {s["id"]: float(s.get("metadata", {}).get("probability", 0)) for s in stages_raw}
+        stage_id_to_order = {s["id"]: i for i, s in enumerate(stages_raw)}
+
+        CLOSED_STAGE_IDS = {
+            s["id"] for s in stages_raw
+            if float(s.get("metadata", {}).get("probability", 0)) >= 1.0
+            or any(kw in s.get("label", "").lower()
+                   for kw in ["cerrado", "ganado", "perdido", "won", "lost", "closed"])
+        }
 
     show_closed = st.checkbox("Mostrar negocios cerrados", value=False)
 
@@ -242,7 +259,9 @@ for d in deals_raw:
     p          = d.get("properties", {})
     stage_id   = p.get("dealstage", "")
     stage_lbl  = stage_id_to_label.get(stage_id, stage_id)
-    stage_prob = stage_id_to_prob.get(stage_id, 0.0)
+    stage_prob = (stage_id_to_prob.get(stage_id)
+                  if stage_id_to_prob
+                  else float(p.get("hs_deal_stage_probability") or 0))
     stage_ord  = stage_id_to_order.get(stage_id, 0)
 
     create_dt  = _parse_dt(p.get("createdate"))

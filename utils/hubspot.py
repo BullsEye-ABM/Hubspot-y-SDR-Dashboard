@@ -203,17 +203,23 @@ def count_owned_total(object_type: str, owner_id: str) -> int:
 # -----------------------------------------
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
-def get_pipelines() -> list[dict]:
-    """Return all deal pipelines with their stages."""
+def get_pipelines() -> tuple[list[dict], str]:
+    """
+    Return (pipelines, error_message).
+    error_message is "" on success, otherwise contains the API error detail.
+    """
     token = _get_token()
-    r = requests.get(
-        f"{API_BASE}/crm/v3/pipelines/deals",
-        headers=_headers(token),
-        timeout=30,
-    )
-    if r.status_code != 200:
-        return []
-    return r.json().get("results", [])
+    try:
+        r = requests.get(
+            f"{API_BASE}/crm/v3/pipelines/deals",
+            headers=_headers(token),
+            timeout=30,
+        )
+        if r.status_code == 200:
+            return r.json().get("results", []), ""
+        return [], f"HTTP {r.status_code}: {r.text[:300]}"
+    except Exception as e:
+        return [], str(e)
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner="Cargando negocios...")
