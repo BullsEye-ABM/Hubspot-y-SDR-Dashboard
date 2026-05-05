@@ -12,6 +12,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 from utils.auth import require_login
 from utils.hubspot import get_pipelines, get_deals_by_pipeline, get_deal_calls, list_owners
@@ -361,6 +362,17 @@ with st.sidebar:
 deal_calls: dict[str, list[dict]] = {}
 if load_transcripts and not df.empty:
     deal_calls = get_deal_calls(tuple(df["id"].astype(str).tolist()))
+    n_with_calls = len(deal_calls)
+    if n_with_calls == 0:
+        st.warning(
+            f"⚠️ No se encontraron transcripciones DIIO para ninguno de los {len(df)} negocios. "
+            "Esto puede significar que: (1) las llamadas DIIO no están asociadas a estos deals ni a sus contactos en HubSpot, "
+            "o (2) el token no tiene el scope `crm.objects.calls.read`. "
+            "Hacé clic en **Actualizar datos** en el sidebar para limpiar caché e intentar de nuevo.",
+            icon="⚠️",
+        )
+    else:
+        st.success(f"✅ Transcripciones DIIO encontradas en {n_with_calls} de {len(df)} negocios.", icon="📞")
 
 if not df.empty:
     for idx in df.index:
@@ -520,11 +532,12 @@ with k6:
     if st.button(" ", key="kbtn6", use_container_width=True):
         _kpi_detail("Todos los negocios por score", df.sort_values("score", ascending=False))
 
-st.markdown("""
+components.html("""
 <script>
 (function() {
+  var doc = window.parent.document;
   function setup() {
-    var cards = document.querySelectorAll('.kpi-html-card:not([data-wired])');
+    var cards = doc.querySelectorAll('.kpi-html-card:not([data-wired])');
     if (!cards.length) return 0;
     var done = 0;
     cards.forEach(function(card) {
@@ -532,7 +545,6 @@ st.markdown("""
       if (!col) return;
       var btn = col.querySelector('[data-testid="stButton"] button');
       if (!btn) return;
-      // Hide the wrapper two levels up from button (element-container)
       var wrap = btn.parentElement && btn.parentElement.parentElement;
       if (wrap) wrap.style.cssText = 'height:0!important;overflow:hidden!important;padding:0!important;margin:0!important;';
       card.setAttribute('data-wired','1');
@@ -555,7 +567,7 @@ st.markdown("""
   attempt();
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
