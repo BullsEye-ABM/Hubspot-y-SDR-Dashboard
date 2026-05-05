@@ -60,29 +60,12 @@ hr { margin: 1rem 0; }
   box-shadow: 0 6px 20px rgba(0,0,0,0.12);
 }
 
-/* ── KPI clickable cards: button overlays the card, fully transparent ── */
-div[data-testid="column"]:has(.kpi-html-card) .stVerticalBlock {
-  position: relative !important;
-}
+/* ── KPI cards: hide the trigger button completely (card onclick fires it) ── */
 div[data-testid="column"]:has(.kpi-html-card) [data-testid="stButton"] {
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 5 !important;
-  margin: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
   padding: 0 !important;
-  height: 100% !important;
-}
-div[data-testid="column"]:has(.kpi-html-card) [data-testid="stButton"] button {
-  width: 100% !important;
-  height: 100% !important;
-  opacity: 0 !important;
-  cursor: pointer !important;
-  border: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
   margin: 0 !important;
-  padding: 0 !important;
-  min-height: unset !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -515,13 +498,22 @@ def _kpi_detail(title: str, sub_df: pd.DataFrame) -> None:
     st.dataframe(disp, use_container_width=True, hide_index=True)
 
 
+_CARD_ONCLICK = (
+    "var c=this.closest('[data-testid=&quot;column&quot;]');"
+    "var b=c?c.querySelector('[data-testid=&quot;stButton&quot;] button'):null;"
+    "if(b)b.click();"
+)
+
 def _kcard(icon, label, value, sub, tc, bg, bc):
-    return f"""<div class="kpi-html-card" style="background:{bg};border:1px solid {bc};border-radius:12px;padding:16px 18px">
-      <div style="font-size:.65rem;font-weight:700;color:{tc};text-transform:uppercase;
-                  letter-spacing:.08em;margin-bottom:4px">{icon} {label}</div>
-      <div style="font-size:1.9rem;font-weight:800;color:#111827;line-height:1.15">{value}</div>
-      <div style="font-size:.7rem;color:#9ca3af;margin-top:3px">{sub}</div>
-    </div>"""
+    return (
+        f'<div class="kpi-html-card" onclick="{_CARD_ONCLICK}" '
+        f'style="background:{bg};border:1px solid {bc};border-radius:12px;padding:16px 18px;cursor:pointer">'
+        f'<div style="font-size:.65rem;font-weight:700;color:{tc};text-transform:uppercase;'
+        f'letter-spacing:.08em;margin-bottom:4px">{icon} {label}</div>'
+        f'<div style="font-size:1.9rem;font-weight:800;color:#111827;line-height:1.15">{value}</div>'
+        f'<div style="font-size:.7rem;color:#9ca3af;margin-top:3px">{sub}</div>'
+        f'</div>'
+    )
 
 
 # ─────────────────────────────────────────
