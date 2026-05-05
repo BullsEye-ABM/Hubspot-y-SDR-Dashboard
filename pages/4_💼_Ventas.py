@@ -51,44 +51,45 @@ hr { margin: 1rem 0; }
               padding:1px 7px; border-radius:8px; font-size:11px; margin:1px; display:inline-block; }
 
 /* ── KPI card buttons — invisible overlay over HTML card ─────────────────── */
-/* Make each column a positioning context */
 .element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"] {
-  position: relative;
+  div[data-testid="column"] div[data-testid="stVerticalBlock"] {
+  position: relative !important;
 }
-/* The element-container holding the button becomes a full-area overlay */
+/* element-container wrapping the button: pull out of flow, cover the column */
 .element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"] > div:has(div[data-testid="stButton"]) {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
+  div[data-testid="stVerticalBlock"] > div:has(div[data-testid="stButton"]) {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 10 !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 .element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="stButton"],
+  div[data-testid="stButton"] {
+  height: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+/* Button itself: invisible, full-area, clickable */
 .element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
   div[data-testid="stButton"] > button {
-  width: 100%;
-  height: 100%;
-}
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="stButton"] > button {
-  all: unset;
-  display: block;
-  cursor: pointer;
+  all: unset !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  cursor: pointer !important;
   background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
+  opacity: 0 !important;
 }
-/* Hover effect: applied to the HTML card when cursor is over the overlay button */
+/* Hover: lift the HTML card using :has */
 .element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"]:has(button:hover) > div:first-child {
+  div[data-testid="stVerticalBlock"]:has(button:hover) > div:first-child {
   transform: translateY(-3px);
-  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.13));
-  transition: transform .15s, filter .15s;
+  filter: drop-shadow(0 6px 18px rgba(0,0,0,0.12));
 }
 .element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"] > div:first-child {
-  transition: transform .15s, filter .15s;
+  div[data-testid="stVerticalBlock"] > div:first-child {
+  transition: transform .15s ease, filter .15s ease;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -380,8 +381,8 @@ with st.sidebar:
     st.divider()
     load_transcripts = st.checkbox(
         "Cargar transcripciones DIIO",
-        value=False,
-        help="Activa para analizar resúmenes de llamadas. Puede tardar unos segundos.",
+        value=True,
+        help="Carga y analiza resúmenes de llamadas asociadas a cada negocio.",
     )
     if st.button("Actualizar datos", use_container_width=True):
         st.cache_data.clear()
@@ -685,10 +686,11 @@ with tab_dir:
             amt      = f"${row['amount']:,.0f}" if row["amount"] > 0 else "–"
             act_days = f"{int(row['days_activity'])}d" if row["days_activity"] < 999 else "–"
             create   = row["create_date"].strftime("%d/%m/%y") if row["create_date"] else "–"
+            razon    = _explain_score(row)
 
             rows_html.append(
                 f"<tr>"
-                f"<td style='padding:8px 10px;font-weight:600;max-width:220px'>{row['deal_name']}</td>"
+                f"<td style='padding:8px 10px;font-weight:600;max-width:200px'>{row['deal_name']}</td>"
                 f"<td style='padding:8px 10px'>{badge}</td>"
                 f"<td style='padding:8px 10px;text-align:right;font-weight:600'>{amt}</td>"
                 f"<td style='padding:8px 10px'>{row['owner']}</td>"
@@ -696,30 +698,10 @@ with tab_dir:
                 f"<td style='padding:8px 10px;text-align:center;color:#6b7280'>{act_days}</td>"
                 f"<td style='padding:8px 10px'>{cd_html}</td>"
                 f"<td style='padding:8px 10px;text-align:center'>{sc_badge}</td>"
+                f"<td style='padding:8px 10px;color:#6b7280;font-size:11px;max-width:220px'>{razon}</td>"
                 f"</tr>"
             )
 
-        table_html = f"""
-        <div style="overflow-x:auto;border-radius:10px;border:1px solid #e5e7eb">
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead>
-            <tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
-              <th style="padding:10px 10px;text-align:left;font-weight:700;color:#374151">Negocio</th>
-              <th style="padding:10px 10px;text-align:left;font-weight:700;color:#374151">Etapa</th>
-              <th style="padding:10px 10px;text-align:right;font-weight:700;color:#374151">Valor</th>
-              <th style="padding:10px 10px;text-align:left;font-weight:700;color:#374151">Owner</th>
-              <th style="padding:10px 10px;text-align:center;font-weight:700;color:#374151">Creado</th>
-              <th style="padding:10px 10px;text-align:center;font-weight:700;color:#374151">Ult. actividad</th>
-              <th style="padding:10px 10px;text-align:left;font-weight:700;color:#374151">Cierre</th>
-              <th style="padding:10px 10px;text-align:center;font-weight:700;color:#374151">Score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {"".join(f'<tr style="border-bottom:1px solid #f3f4f6">{r[4:]}</tr>' if i % 2 else r for i, r in enumerate(rows_html))}
-          </tbody>
-        </table>
-        </div>"""
-        # Re-build cleanly
         body_rows = "".join(
             f'<tr style="border-bottom:1px solid #f3f4f6;{"background:#fafafa" if i%2==0 else ""}">'
             + r.split("<tr>")[1].split("</tr>")[0]
@@ -739,6 +721,7 @@ with tab_dir:
               <th style="padding:10px;text-align:center;color:#374151;font-weight:700">Ult. actividad</th>
               <th style="padding:10px;text-align:left;color:#374151;font-weight:700">Cierre est.</th>
               <th style="padding:10px;text-align:center;color:#374151;font-weight:700">Score cierre</th>
+              <th style="padding:10px;text-align:left;color:#374151;font-weight:700">Razón del score</th>
             </tr>
           </thead>
           <tbody>{body_rows}</tbody>
