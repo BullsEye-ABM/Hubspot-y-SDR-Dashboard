@@ -50,51 +50,45 @@ hr { margin: 1rem 0; }
 .signal-urg { background:rgba(251,191,36,.14); color:#b45309;
               padding:1px 7px; border-radius:8px; font-size:11px; margin:1px; display:inline-block; }
 
-/* ── KPI card buttons ───────────────────────────────────────────────────── */
+/* ── KPI card buttons — invisible overlay over HTML card ─────────────────── */
+/* Make each column a positioning context */
+.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
+  div[data-testid="column"] {
+  position: relative;
+}
+/* The element-container holding the button becomes a full-area overlay */
+.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
+  div[data-testid="column"] > div:has(div[data-testid="stButton"]) {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+}
+.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
+  div[data-testid="stButton"],
+.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
+  div[data-testid="stButton"] > button {
+  width: 100%;
+  height: 100%;
+}
 .element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
   div[data-testid="stButton"] > button {
   all: unset;
   display: block;
-  box-sizing: border-box;
-  width: 100%;
-  border-radius: 12px;
-  padding: 16px 18px;
   cursor: pointer;
-  transition: box-shadow .15s, transform .12s;
-  white-space: pre-line;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  line-height: 1.45;
-  font-size: 13px;
-  font-weight: 600;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+/* Hover effect: applied to the HTML card when cursor is over the overlay button */
+.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
+  div[data-testid="column"]:has(button:hover) > div:first-child {
+  transform: translateY(-3px);
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,0.13));
+  transition: transform .15s, filter .15s;
 }
 .element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="stButton"] > button:hover {
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  transform: translateY(-2px);
-}
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"]:nth-child(1) button {
-  background: linear-gradient(135deg,#f8faff,#eef2ff); border: 1px solid #c7d2fe;
-}
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"]:nth-child(2) button {
-  background: linear-gradient(135deg,#f0f9ff,#e0f2fe); border: 1px solid #7dd3fc;
-}
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"]:nth-child(3) button {
-  background: linear-gradient(135deg,#faf5ff,#ede9fe); border: 1px solid #c4b5fd;
-}
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"]:nth-child(4) button {
-  background: linear-gradient(135deg,#f0fdf4,#dcfce7); border: 1px solid #86efac;
-}
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"]:nth-child(5) button {
-  background: linear-gradient(135deg,#fffbeb,#fef3c7); border: 1px solid #fcd34d;
-}
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"]:nth-child(6) button {
-  background: linear-gradient(135deg,#fff7f7,#fde8e8); border: 1px solid #fca5a5;
+  div[data-testid="column"] > div:first-child {
+  transition: transform .15s, filter .15s;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -456,6 +450,35 @@ closing_month  = len(df_closing)
 avg_score      = round(df["score"].mean()) if not df.empty else 0
 
 
+def _explain_score(row: pd.Series) -> str:
+    """Generate a human-readable reason for the score."""
+    sig = row.get("signals", {})
+    if not isinstance(sig, dict):
+        sig = {}
+    stage_pct = int(row.get("stage_prob", 0) * 100)
+    if not sig.get("has_text"):
+        days_act = int(row.get("days_activity", 999))
+        days_cl  = row.get("days_to_close")
+        parts = [f"Sin transcripciones · etapa {stage_pct}%"]
+        if days_act > 30:
+            parts.append(f"sin actividad {days_act}d")
+        if days_cl is not None and days_cl < 0:
+            parts.append("fecha cierre vencida")
+        elif days_cl is not None and days_cl <= 14:
+            parts.append(f"cierra en {days_cl}d")
+        return " · ".join(parts)
+    parts = []
+    for kw in sig.get("positive", [])[:3]:
+        parts.append(f"✓ {kw}")
+    for kw in sig.get("urgency", [])[:2]:
+        parts.append(f"⚡ {kw}")
+    for kw in sig.get("negative", [])[:2]:
+        parts.append(f"✗ {kw}")
+    if not parts:
+        return f"Etapa {stage_pct}% · {sig.get('call_count', 0)} llamada(s) sin señales clave"
+    return " · ".join(parts)
+
+
 @st.dialog("Detalle de negocios", width="large")
 def _kpi_detail(title: str, sub_df: pd.DataFrame) -> None:
     st.markdown(f"**{title}** — {len(sub_df)} negocio(s)")
@@ -463,43 +486,70 @@ def _kpi_detail(title: str, sub_df: pd.DataFrame) -> None:
         st.info("Sin negocios en esta categoría.")
         return
     disp = sub_df[["deal_name", "stage", "amount", "owner", "close_date", "score"]].copy()
+    disp["razon"] = sub_df.apply(_explain_score, axis=1)
     disp["amount"] = disp["amount"].apply(lambda v: f"${v:,.0f}" if v > 0 else "–")
     disp["close_date"] = disp["close_date"].apply(
         lambda d: d.strftime("%d/%m/%Y") if d is not None else "–"
     )
     disp["score"] = disp["score"].apply(lambda s: f"{int(s)}%")
-    disp.columns = ["Negocio", "Etapa", "Valor", "Owner", "Cierre estimado", "Score"]
+    disp.columns = ["Negocio", "Etapa", "Valor", "Owner", "Cierre estimado", "Score", "Razón del score"]
     st.dataframe(disp, use_container_width=True, hide_index=True)
 
 
+def _kcard(icon, label, value, sub, tc, bg, bc):
+    return f"""<div style="background:{bg};border:1px solid {bc};border-radius:12px;padding:16px 18px">
+      <div style="font-size:.65rem;font-weight:700;color:{tc};text-transform:uppercase;
+                  letter-spacing:.08em;margin-bottom:4px">{icon} {label}</div>
+      <div style="font-size:1.9rem;font-weight:800;color:#111827;line-height:1.15">{value}</div>
+      <div style="font-size:.7rem;color:#9ca3af;margin-top:3px">{sub}</div>
+    </div>"""
+
+
 # ─────────────────────────────────────────
-#  KPI Cards (clickable — each card IS the button)
+#  KPI Cards (HTML card + invisible overlay button)
 # ─────────────────────────────────────────
 st.markdown('<div class="kpi-row-marker" style="display:none"></div>', unsafe_allow_html=True)
 k1, k2, k3, k4, k5, k6 = st.columns(6)
 
 with k1:
-    if st.button(f"🏢 ACTIVOS\n{total_deals:,}\nen pipeline", key="kbtn1", use_container_width=True):
+    st.markdown(_kcard("🏢","Activos",f"{total_deals:,}","en pipeline",
+        "#6366f1","linear-gradient(135deg,#f8faff,#eef2ff)","#c7d2fe"), unsafe_allow_html=True)
+    if st.button(" ", key="kbtn1", use_container_width=True):
         _kpi_detail("Todos los negocios activos", df.sort_values("score", ascending=False))
 
 with k2:
-    if st.button(f"💰 VALOR TOTAL\n${total_value:,.0f}\nsuma de deals", key="kbtn2", use_container_width=True):
+    st.markdown(_kcard("💰","Valor total",f"${total_value:,.0f}","suma de deals",
+        "#0ea5e9","linear-gradient(135deg,#f0f9ff,#e0f2fe)","#7dd3fc"), unsafe_allow_html=True)
+    if st.button(" ", key="kbtn2", use_container_width=True):
         _kpi_detail("Negocios por valor", df.sort_values("amount", ascending=False))
 
 with k3:
-    if st.button(f"⚖️ VALOR PONDERADO\n${weighted_value:,.0f}\najustado por probabilidad", key="kbtn3", use_container_width=True):
+    st.markdown(_kcard("⚖️","Valor ponderado",f"${weighted_value:,.0f}","ajustado por probabilidad",
+        "#8b5cf6","linear-gradient(135deg,#faf5ff,#ede9fe)","#c4b5fd"), unsafe_allow_html=True)
+    if st.button(" ", key="kbtn3", use_container_width=True):
         _kpi_detail("Negocios por valor ponderado", df.sort_values("weighted", ascending=False))
 
 with k4:
-    if st.button(f"🔥 EN CIERRE (≥65)\n{hot_deals:,}\nscore alto", key="kbtn4", use_container_width=True):
+    tc4 = "#15803d" if hot_deals > 0 else "#6b7280"
+    bg4 = "linear-gradient(135deg,#f0fdf4,#dcfce7)" if hot_deals > 0 else "linear-gradient(135deg,#f9fafb,#f3f4f6)"
+    bc4 = "#86efac" if hot_deals > 0 else "#e5e7eb"
+    st.markdown(_kcard("🔥","En cierre (≥65)",f"{hot_deals:,}","score alto",
+        tc4, bg4, bc4), unsafe_allow_html=True)
+    if st.button(" ", key="kbtn4", use_container_width=True):
         _kpi_detail("Negocios en cierre (score ≥ 65%)", df_hot_kpi.sort_values("score", ascending=False))
 
 with k5:
-    if st.button(f"📅 CIERRAN ESTE MES\n{closing_month:,}\npor close date", key="kbtn5", use_container_width=True):
+    tc5 = "#b45309" if closing_month > 0 else "#6b7280"
+    st.markdown(_kcard("📅","Cierran este mes",f"{closing_month:,}","por close date",
+        tc5,"linear-gradient(135deg,#fffbeb,#fef3c7)","#fcd34d"), unsafe_allow_html=True)
+    if st.button(" ", key="kbtn5", use_container_width=True):
         _kpi_detail("Negocios que cierran este mes", df_closing.sort_values("close_date"))
 
 with k6:
-    if st.button(f"📊 SCORE PROM.\n{avg_score}%\nbasado en señales", key="kbtn6", use_container_width=True):
+    tc6 = "#15803d" if avg_score >= 55 else "#b45309" if avg_score >= 35 else "#b91c1c"
+    st.markdown(_kcard("📊","Score prom.",f"{avg_score}%","basado en señales",
+        tc6,"linear-gradient(135deg,#fff7f7,#fde8e8)","#fca5a5"), unsafe_allow_html=True)
+    if st.button(" ", key="kbtn6", use_container_width=True):
         _kpi_detail("Todos los negocios por score", df.sort_values("score", ascending=False))
 
 st.markdown("<br>", unsafe_allow_html=True)
