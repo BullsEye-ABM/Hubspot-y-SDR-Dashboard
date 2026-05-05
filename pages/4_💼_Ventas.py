@@ -6,16 +6,16 @@ Pipeline ABM y Consultorias - HubSpot CRM + analisis de transcripciones DIIO
 from __future__ import annotations
 
 import re
+import requests
 from datetime import datetime, date, timezone, timedelta
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-import streamlit.components.v1 as components
 
 from utils.auth import require_login
-from utils.hubspot import get_pipelines, get_deals_by_pipeline, get_deal_calls, list_owners
+from utils.hubspot import get_pipelines, get_deals_by_pipeline, get_deal_notes, list_owners
 from utils.periods import PERIOD_OPTIONS, get_period_dates
 
 # ─────────────────────────────────────────
@@ -59,6 +59,31 @@ hr { margin: 1rem 0; }
   transform: translateY(-3px);
   box-shadow: 0 6px 20px rgba(0,0,0,0.12);
 }
+
+/* ── KPI clickable cards: button overlays the card, fully transparent ── */
+div[data-testid="column"]:has(.kpi-html-card) .stVerticalBlock {
+  position: relative !important;
+}
+div[data-testid="column"]:has(.kpi-html-card) [data-testid="stButton"] {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 5 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100% !important;
+}
+div[data-testid="column"]:has(.kpi-html-card) [data-testid="stButton"] button {
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0 !important;
+  cursor: pointer !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: unset !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,6 +101,14 @@ POSITIVE_KW = [
     "carta de intencion", "propuesta aprobada", "aprobaron",
     "interesado", "le interesa", "quiere proceder", "gustó",
     "le gustó", "le gusto", "avanzamos", "seguimos",
+    # DIIO meeting context (B2B ABM)
+    "alto valor", "alto nivel", "percepción de alto valor",
+    "validación", "valida", "validó", "compara positivamente",
+    "quiere contratar", "proceder", "modelo de contratación",
+    "próximos pasos", "seguimiento comercial", "envía propuesta",
+    "segunda reunión", "tercera reunión", "reunión de cierre",
+    "disponibilidad de presupuesto", "presupuesto disponible",
+    "agendar demo", "demo agendada", "presentar propuesta",
 ]
 
 NEGATIVE_KW = [
@@ -86,6 +119,11 @@ NEGATIVE_KW = [
     "no hay presupuesto", "congelado", "en pausa", "pausado",
     "no tiene claridad", "no por ahora", "no es el momento",
     "no recibio", "no recibió", "no le llego", "no llego",
+    # DIIO meeting context
+    "insatisfacción", "insatisfecho", "bajo costo", "no amarrarse",
+    "no ven el valor", "no está convencido", "dudas",
+    "proceso interno", "no necesitan", "ya tienen proveedor",
+    "no tiene ancho de banda",
 ]
 
 URGENCY_KW = [
@@ -93,6 +131,9 @@ URGENCY_KW = [
     "deadline", "fecha limite", "antes de", "lo antes posible",
     "para esta semana", "para este mes", "cuanto antes",
     "hoy mismo", "inmediatamente", "para mañana",
+    # DIIO meeting context
+    "q2", "q3", "segundo trimestre", "tercer trimestre",
+    "hoja de ruta", "definirá", "reunión interna", "esta semana",
 ]
 
 
@@ -348,9 +389,9 @@ if selected_stages and not df.empty:
 with st.sidebar:
     st.divider()
     load_transcripts = st.checkbox(
-        "Cargar transcripciones DIIO",
+        "Cargar notas de reuniones DIIO",
         value=True,
-        help="Carga y analiza resúmenes de llamadas asociadas a cada negocio.",
+        help="Carga y analiza las notas que DIIO genera en HubSpot tras cada reunión.",
     )
     if st.button("Actualizar datos", use_container_width=True):
         st.cache_data.clear()
@@ -358,21 +399,19 @@ with st.sidebar:
     st.caption("Cache: 15 min · Datos en vivo desde HubSpot.")
 
 
-# ── Load transcripts & score ───────────────────────────────────────────────
+# ── Load DIIO meeting notes & score ───────────────────────────────────────────────
 deal_calls: dict[str, list[dict]] = {}
 if load_transcripts and not df.empty:
-    deal_calls = get_deal_calls(tuple(df["id"].astype(str).tolist()))
+    deal_calls = get_deal_notes(tuple(df["id"].astype(str).tolist()))
     n_with_calls = len(deal_calls)
     if n_with_calls == 0:
-        st.warning(
-            f"⚠️ No se encontraron transcripciones DIIO para ninguno de los {len(df)} negocios. "
-            "Esto puede significar que: (1) las llamadas DIIO no están asociadas a estos deals ni a sus contactos en HubSpot, "
-            "o (2) el token no tiene el scope `crm.objects.calls.read`. "
-            "Hacé clic en **Actualizar datos** en el sidebar para limpiar caché e intentar de nuevo.",
-            icon="⚠️",
+        st.info(
+            f"No se encontraron notas de reuniones DIIO para los {len(df)} negocios del pipeline. "
+            "Solo los negocios con reuniones realizadas tendrán análisis de señales.",
+            icon="ℹ️",
         )
     else:
-        st.success(f"✅ Transcripciones DIIO encontradas en {n_with_calls} de {len(df)} negocios.", icon="📞")
+        st.success(f"Notas DIIO cargadas: {n_with_calls} de {len(df)} negocios tienen reuniones registradas.", icon="📋")
 
 if not df.empty:
     for idx in df.index:
@@ -406,7 +445,7 @@ st.markdown(f"""
     </h1>
     <p style="margin:0;color:#6b7280;font-size:13px">
       {len(df):,} negocios · Bullseye (SOi Digital) ·
-      {"Transcripciones DIIO activadas" if load_transcripts else "Transcripciones: desactivadas (activar en sidebar)"}
+      {"Notas DIIO activadas" if load_transcripts else "Notas DIIO: desactivadas (activar en sidebar)"}
     </p>
   </div>
 </div>
@@ -439,7 +478,7 @@ def _explain_score(row: pd.Series) -> str:
     if not sig.get("has_text"):
         days_act = int(row.get("days_activity", 999))
         days_cl  = row.get("days_to_close")
-        parts = [f"Sin transcripciones · etapa {stage_pct}%"]
+        parts = [f"Sin notas DIIO · etapa {stage_pct}%"]
         if days_act > 30:
             parts.append(f"sin actividad {days_act}d")
         if days_cl is not None and days_cl < 0:
@@ -455,7 +494,7 @@ def _explain_score(row: pd.Series) -> str:
     for kw in sig.get("negative", [])[:2]:
         parts.append(f"✗ {kw}")
     if not parts:
-        return f"Etapa {stage_pct}% · {sig.get('call_count', 0)} llamada(s) sin señales clave"
+        return f"Etapa {stage_pct}% · {sig.get('call_count', 0)} reunión/es sin señales clave"
     return " · ".join(parts)
 
 
@@ -532,42 +571,6 @@ with k6:
     if st.button(" ", key="kbtn6", use_container_width=True):
         _kpi_detail("Todos los negocios por score", df.sort_values("score", ascending=False))
 
-components.html("""
-<script>
-(function() {
-  var doc = window.parent.document;
-  function setup() {
-    var cards = doc.querySelectorAll('.kpi-html-card:not([data-wired])');
-    if (!cards.length) return 0;
-    var done = 0;
-    cards.forEach(function(card) {
-      var col = card.closest('[data-testid="column"]');
-      if (!col) return;
-      var btn = col.querySelector('[data-testid="stButton"] button');
-      if (!btn) return;
-      var wrap = btn.parentElement && btn.parentElement.parentElement;
-      if (wrap) wrap.style.cssText = 'height:0!important;overflow:hidden!important;padding:0!important;margin:0!important;';
-      card.setAttribute('data-wired','1');
-      card.addEventListener('click', (function(b, w) {
-        return function() {
-          if (w) w.style.cssText = '';
-          b.click();
-          if (w) setTimeout(function(){ w.style.cssText='height:0!important;overflow:hidden!important;padding:0!important;margin:0!important;'; }, 80);
-        };
-      })(btn, wrap));
-      done++;
-    });
-    return done;
-  }
-  var tries = 0;
-  function attempt() {
-    if (setup() >= 1) return;
-    if (++tries < 40) setTimeout(attempt, 250);
-  }
-  attempt();
-})();
-</script>
-""", height=0)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -755,8 +758,8 @@ with tab_hot:
 
         if df_hot.empty and df_warm.empty:
             if not load_transcripts:
-                st.info("Activa 'Cargar transcripciones DIIO' en el sidebar para ver el análisis de señales. "
-                        "Sin transcripciones el score se basa solo en etapa y fechas.")
+                st.info("Activa 'Cargar notas de reuniones DIIO' en el sidebar para ver el análisis de señales. "
+                        "Sin notas DIIO el score se basa solo en etapa y fechas.")
             else:
                 st.info("Sin deals calientes en este pipeline con los filtros actuales.")
         else:
@@ -769,8 +772,7 @@ with tab_hot:
                     pos_tags = " ".join(f'<span class="signal-pos">✓ {s}</span>' for s in sig["positive"][:5])
                     neg_tags = " ".join(f'<span class="signal-neg">✗ {s}</span>' for s in sig["negative"][:3])
                     urg_tags = " ".join(f'<span class="signal-urg">⚡ {s}</span>' for s in sig["urgency"][:3])
-                    calls_in = deal_calls.get(str(row["id"]), [])
-                    n_calls  = len(calls_in)
+                    n_notes = len(deal_calls.get(str(row["id"]), []))
                     st.markdown(f"""
 <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #86efac;
             border-radius:12px;padding:16px 20px;margin-bottom:10px">
@@ -789,7 +791,7 @@ with tab_hot:
   <div style="margin-top:8px;font-size:12px;color:#374151">
     💰 <b>{amt}</b> &nbsp;|&nbsp; 👤 {row['owner']} &nbsp;|&nbsp;
     📅 Cierre: <b>{cd}</b>
-    {f"&nbsp;|&nbsp; 📞 {n_calls} llamada(s)" if n_calls else ""}
+    {f"&nbsp;|&nbsp; 📋 {n_notes} reunión/es DIIO" if n_notes else ""}
   </div>
   <div style="margin-top:8px">{pos_tags}{neg_tags}{urg_tags}</div>
 </div>""", unsafe_allow_html=True)
@@ -812,18 +814,18 @@ with tab_hot:
 </div>""", unsafe_allow_html=True)
 
 
-# ── TAB 3: TRANSCRIPCIONES DIIO ──────────────────────────────────────────────
+# ── TAB 3: NOTAS DIIO ────────────────────────────────────────────────────────
 with tab_trans:
     if not load_transcripts:
-        st.info("Activa **'Cargar transcripciones DIIO'** en el sidebar para ver los resúmenes de llamadas "
-                "generados automáticamente por DIIO.")
+        st.info("Activa **'Cargar notas de reuniones DIIO'** en el sidebar para ver los resúmenes de reuniones.")
     elif not deal_calls:
-        st.info("No se encontraron transcripciones de llamadas para los negocios en este pipeline.")
+        st.info("No se encontraron notas de reuniones DIIO para los negocios en este pipeline. "
+                "Solo aparecen negocios con reuniones realizadas y registradas por DIIO.")
     else:
         deals_with_calls = [row for _, row in df.iterrows() if str(row["id"]) in deal_calls]
         deals_with_calls = sorted(deals_with_calls, key=lambda r: r["score"], reverse=True)
 
-        st.markdown(f"**{len(deals_with_calls)}** negocios con transcripciones DIIO")
+        st.markdown(f"**{len(deals_with_calls)}** negocios con notas de reuniones DIIO")
         st.divider()
 
         for row in deals_with_calls:
@@ -840,40 +842,29 @@ with tab_trans:
 
             with st.expander(
                 f"{sc_icon} {row['deal_name']}  —  "
-                f"{row['stage']}  ·  {amt}  ·  Score: {score}%  ·  {len(calls_list)} llamada(s)"
+                f"{row['stage']}  ·  {amt}  ·  Score: {score}%  ·  {len(calls_list)} reunión/es"
             ):
                 # Signals summary
                 if pos_tags or neg_tags or urg_tags:
-                    st.markdown("**Señales detectadas en transcripciones:**")
+                    st.markdown("**Señales detectadas en notas DIIO:**")
                     st.markdown(
                         f"{pos_tags} {neg_tags} {urg_tags}",
                         unsafe_allow_html=True
                     )
                     st.markdown("---")
 
-                # Individual calls
-                for call in calls_list:
+                # Individual notes
+                for note in calls_list:
                     ts = ""
                     try:
-                        ts = datetime.fromisoformat(call["timestamp"].replace("Z", "+00:00")) \
+                        ts = datetime.fromisoformat(note["timestamp"].replace("Z", "+00:00")) \
                                      .strftime("%d/%m/%Y %H:%M")
                     except Exception:
                         pass
-                    dur_min = call["duration_ms"] // 60000
-                    dur_sec = (call["duration_ms"] % 60000) // 1000
 
-                    st.markdown(
-                        f"**📞 {call['title']}** &nbsp;·&nbsp; {ts}"
-                        f" &nbsp;·&nbsp; {call['disposition']}"
-                        f"{f' &nbsp;·&nbsp; {dur_min}:{dur_sec:02d} min' if dur_min else ''}",
-                        unsafe_allow_html=True,
-                    )
-                    if call.get("summary"):
-                        st.markdown("*Resumen DIIO:*")
-                        st.markdown(call["summary"], unsafe_allow_html=True)
-                    if call.get("body"):
-                        st.markdown("*Notas del SDR:*")
-                        st.markdown(call["body"], unsafe_allow_html=True)
+                    st.markdown(f"**Reunión DIIO** &nbsp;·&nbsp; {ts}", unsafe_allow_html=True)
+                    if note.get("summary"):
+                        st.markdown(note["summary"], unsafe_allow_html=True)
                     st.markdown("---")
 
 

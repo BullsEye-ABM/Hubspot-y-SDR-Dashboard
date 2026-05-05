@@ -258,139 +258,56 @@ def get_deals_by_pipeline(pipeline_id: str) -> list[dict]:
     return results
 
 
-@st.cache_data(ttl=CACHE_TTL, show_spinner="Cargando transcripciones DIIO...")
-def get_deal_calls(deal_ids: tuple) -> dict[str, list[dict]]:
+@st.cache_data(ttl=CACHE_TTL, show_spinner="Cargando notas de reuniones DIIO...")
+def get_deal_notes(deal_ids: tuple) -> dict[str, list[dict]]:
     """
-    Return calls (with DIIO summaries) associated with deals.
-    deal_ids must be a tuple for st.cache_data hashing.
-    Returns: {deal_id: [call_dict, ...]}
+    Fetch DIIO meeting notes from HubSpot for each deal.
+    DIIO creates a NOTE engagement on the deal after each meeting,
+    with body containing rich HTML summary (starts with 'Fuente: Reunión').
+    Returns: {deal_id: [note_dict, ...]}
     """
+    import re as _re
     token = _get_token()
     if not deal_ids:
         return {}
 
-    batch_size = 100
-    deal_to_call_ids: dict[str, list[str]] = {}
+    result: dict[str, list[dict]] = {}
 
-    # Step 1: Get call IDs associated with each deal
-    for i in range(0, len(deal_ids), batch_size):
-        batch = list(deal_ids[i:i + batch_size])
+    for did in deal_ids:
         try:
-            r = requests.post(
-                f"{API_BASE}/crm/v4/associations/deals/calls/batch/read",
+            r = requests.get(
+                f"{API_BASE}/engagements/v1/engagements/associated/deal/{did}/paged",
                 headers=_headers(token),
-                json={"inputs": [{"id": did} for did in batch]},
+                params={"limit": 100},
                 timeout=30,
             )
-            if r.status_code == 200:
-                for item in r.json().get("results", []):
-                    did = str(item["from"]["id"])
-                    cids = [str(a["toObjectId"]) for a in item.get("to", [])]
-                    if cids:
-                        deal_to_call_ids[did] = cids
-        except Exception:
-            pass
-
-    # Step 1b: For deals with no direct call associations, look via contacts
-    deals_without_calls = [did for did in deal_ids if did not in deal_to_call_ids]
-    if deals_without_calls:
-        deal_to_contact_ids: dict[str, list[str]] = {}
-        for i in range(0, len(deals_without_calls), batch_size):
-            batch = list(deals_without_calls[i:i + batch_size])
-            try:
-                r = requests.post(
-                    f"{API_BASE}/crm/v4/associations/deals/contacts/batch/read",
-                    headers=_headers(token),
-                    json={"inputs": [{"id": did} for did in batch]},
-                    timeout=30,
-                )
-                if r.status_code == 200:
-                    for item in r.json().get("results", []):
-                        did = str(item["from"]["id"])
-                        cids = [str(a["toObjectId"]) for a in item.get("to", [])]
-                        if cids:
-                            deal_to_contact_ids[did] = cids
-            except Exception:
-                pass
-
-        all_contact_ids = list({cid for cids in deal_to_contact_ids.values() for cid in cids})
-        contact_to_call_ids: dict[str, list[str]] = {}
-        for i in range(0, len(all_contact_ids), batch_size):
-            batch = all_contact_ids[i:i + batch_size]
-            try:
-                r = requests.post(
-                    f"{API_BASE}/crm/v4/associations/contacts/calls/batch/read",
-                    headers=_headers(token),
-                    json={"inputs": [{"id": cid} for cid in batch]},
-                    timeout=30,
-                )
-                if r.status_code == 200:
-                    for item in r.json().get("results", []):
-                        cid = str(item["from"]["id"])
-                        call_ids = [str(a["toObjectId"]) for a in item.get("to", [])]
-                        if call_ids:
-                            contact_to_call_ids[cid] = call_ids
-            except Exception:
-                pass
-
-        for did, contact_ids in deal_to_contact_ids.items():
-            extra_calls = [c for cid in contact_ids for c in contact_to_call_ids.get(cid, [])]
-            if extra_calls:
-                deal_to_call_ids.setdefault(did, [])
-                deal_to_call_ids[did].extend(extra_calls)
-
-    if not deal_to_call_ids:
-        return {}
-
-    # Step 2: Fetch call details in batches
-    all_call_ids = list({cid for cids in deal_to_call_ids.values() for cid in cids})
-    call_details: dict[str, dict] = {}
-
-    for i in range(0, len(all_call_ids), batch_size):
-        batch = all_call_ids[i:i + batch_size]
-        try:
-            r = requests.post(
-                f"{API_BASE}/crm/v3/objects/calls/batch/read",
-                headers=_headers(token),
-                json={
-                    "inputs": [{"id": cid} for cid in batch],
-                    "properties": [
-                        "hs_call_title", "hs_call_body", "hs_call_summary",
-                        "hs_timestamp", "hs_call_disposition", "hs_call_duration",
-                    ],
-                },
-                timeout=60,
-            )
-            if r.status_code == 200:
-                for call in r.json().get("results", []):
-                    call_details[str(call["id"])] = call.get("properties", {})
-        except Exception:
-            pass
-
-    # Step 3: Build deal -> calls mapping (sorted newest first)
-    result: dict[str, list[dict]] = {}
-    for did, cids in deal_to_call_ids.items():
-        calls = []
-        for cid in cids:
-            cd = call_details.get(cid)
-            if not cd:
+            if r.status_code != 200:
                 continue
-            summary = cd.get("hs_call_summary") or ""
-            body = cd.get("hs_call_body") or ""
-            if summary or body:
-                calls.append({
-                    "id": cid,
-                    "title": cd.get("hs_call_title") or "Llamada",
-                    "summary": summary,
+            notes = []
+            for item in r.json().get("results", []):
+                eng = item.get("engagement", {})
+                if eng.get("type") != "NOTE":
+                    continue
+                body = item.get("metadata", {}).get("body", "") or ""
+                # Strip HTML to check content quality
+                plain = _re.sub(r"<[^>]+>", " ", body).strip()
+                if len(plain) < 150:
+                    continue
+                # Skip LinkedIn/automation notes
+                plain_lower = plain.lower()
+                if any(s in plain_lower for s in ["linkedin", "campaign:", "lemlist"]):
+                    continue
+                notes.append({
+                    "id": str(eng.get("id", "")),
+                    "title": "Reunión DIIO",
+                    "summary": body,
                     "body": body,
-                    "timestamp": cd.get("hs_timestamp") or "",
-                    "disposition": DISPOSITION_LABELS.get(
-                        cd.get("hs_call_disposition") or "", "Sin disposicion"
-                    ),
-                    "duration_ms": int(cd.get("hs_call_duration") or 0),
+                    "timestamp": str(eng.get("createdAt", "") or ""),
                 })
-        if calls:
-            calls.sort(key=lambda x: x["timestamp"], reverse=True)
-            result[did] = calls
+            if notes:
+                notes.sort(key=lambda x: x["timestamp"], reverse=True)
+                result[did] = notes
+        except Exception:
+            pass
 
     return result
