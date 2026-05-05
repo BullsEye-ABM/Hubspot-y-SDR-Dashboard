@@ -291,6 +291,54 @@ def get_deal_calls(deal_ids: tuple) -> dict[str, list[dict]]:
         except Exception:
             pass
 
+    # Step 1b: For deals with no direct call associations, look via contacts
+    deals_without_calls = [did for did in deal_ids if did not in deal_to_call_ids]
+    if deals_without_calls:
+        deal_to_contact_ids: dict[str, list[str]] = {}
+        for i in range(0, len(deals_without_calls), batch_size):
+            batch = list(deals_without_calls[i:i + batch_size])
+            try:
+                r = requests.post(
+                    f"{API_BASE}/crm/v4/associations/deals/contacts/batch/read",
+                    headers=_headers(token),
+                    json={"inputs": [{"id": did} for did in batch]},
+                    timeout=30,
+                )
+                if r.status_code == 200:
+                    for item in r.json().get("results", []):
+                        did = str(item["from"]["id"])
+                        cids = [str(a["toObjectId"]) for a in item.get("to", [])]
+                        if cids:
+                            deal_to_contact_ids[did] = cids
+            except Exception:
+                pass
+
+        all_contact_ids = list({cid for cids in deal_to_contact_ids.values() for cid in cids})
+        contact_to_call_ids: dict[str, list[str]] = {}
+        for i in range(0, len(all_contact_ids), batch_size):
+            batch = all_contact_ids[i:i + batch_size]
+            try:
+                r = requests.post(
+                    f"{API_BASE}/crm/v4/associations/contacts/calls/batch/read",
+                    headers=_headers(token),
+                    json={"inputs": [{"id": cid} for cid in batch]},
+                    timeout=30,
+                )
+                if r.status_code == 200:
+                    for item in r.json().get("results", []):
+                        cid = str(item["from"]["id"])
+                        call_ids = [str(a["toObjectId"]) for a in item.get("to", [])]
+                        if call_ids:
+                            contact_to_call_ids[cid] = call_ids
+            except Exception:
+                pass
+
+        for did, contact_ids in deal_to_contact_ids.items():
+            extra_calls = [c for cid in contact_ids for c in contact_to_call_ids.get(cid, [])]
+            if extra_calls:
+                deal_to_call_ids.setdefault(did, [])
+                deal_to_call_ids[did].extend(extra_calls)
+
     if not deal_to_call_ids:
         return {}
 

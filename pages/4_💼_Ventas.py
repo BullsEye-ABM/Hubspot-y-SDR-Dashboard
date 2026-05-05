@@ -50,46 +50,18 @@ hr { margin: 1rem 0; }
 .signal-urg { background:rgba(251,191,36,.14); color:#b45309;
               padding:1px 7px; border-radius:8px; font-size:11px; margin:1px; display:inline-block; }
 
-/* ── KPI card buttons — invisible overlay over HTML card ─────────────────── */
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="column"] div[data-testid="stVerticalBlock"] {
-  position: relative !important;
-}
-/* element-container wrapping the button: pull out of flow, cover the column */
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="stVerticalBlock"] > div:has(div[data-testid="stButton"]) {
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 10 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
+/* ── KPI cards: hide Streamlit buttons (triggered via JS) ───────────────── */
 .element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
   div[data-testid="stButton"] {
-  height: 100% !important;
-  padding: 0 !important;
-  margin: 0 !important;
+  display: none !important;
 }
-/* Button itself: invisible, full-area, clickable */
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="stButton"] > button {
-  all: unset !important;
-  display: block !important;
-  width: 100% !important;
-  height: 100% !important;
-  cursor: pointer !important;
-  background: transparent !important;
-  opacity: 0 !important;
+.kpi-html-card {
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
 }
-/* Hover: lift the HTML card using :has */
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="stVerticalBlock"]:has(button:hover) > div:first-child {
+.kpi-html-card:hover {
   transform: translateY(-3px);
-  filter: drop-shadow(0 6px 18px rgba(0,0,0,0.12));
-}
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="stVerticalBlock"] > div:first-child {
-  transition: transform .15s ease, filter .15s ease;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -498,7 +470,7 @@ def _kpi_detail(title: str, sub_df: pd.DataFrame) -> None:
 
 
 def _kcard(icon, label, value, sub, tc, bg, bc):
-    return f"""<div style="background:{bg};border:1px solid {bc};border-radius:12px;padding:16px 18px">
+    return f"""<div class="kpi-html-card" style="background:{bg};border:1px solid {bc};border-radius:12px;padding:16px 18px">
       <div style="font-size:.65rem;font-weight:700;color:{tc};text-transform:uppercase;
                   letter-spacing:.08em;margin-bottom:4px">{icon} {label}</div>
       <div style="font-size:1.9rem;font-weight:800;color:#111827;line-height:1.15">{value}</div>
@@ -552,6 +524,38 @@ with k6:
         tc6,"linear-gradient(135deg,#fff7f7,#fde8e8)","#fca5a5"), unsafe_allow_html=True)
     if st.button(" ", key="kbtn6", use_container_width=True):
         _kpi_detail("Todos los negocios por score", df.sort_values("score", ascending=False))
+
+st.markdown("""
+<script>
+(function() {
+  function wireKpiCards() {
+    var cards = document.querySelectorAll('.kpi-html-card:not([data-wired])');
+    if (cards.length === 0) return;
+    var marker = document.querySelector('.kpi-row-marker');
+    if (!marker) return;
+    var el = marker.parentElement;
+    while (el && el.getAttribute('data-testid') !== 'stMarkdownContainer') el = el.parentElement;
+    if (!el) el = marker.closest('[class*="element-container"]');
+    var hblock = el ? el.parentElement.nextElementSibling : null;
+    if (!hblock) return;
+    var btns = hblock.querySelectorAll('[data-testid="stButton"] button');
+    cards.forEach(function(card, i) {
+      var btn = btns[i];
+      if (btn) {
+        card.setAttribute('data-wired', '1');
+        card.addEventListener('click', function() { btn.click(); });
+      }
+    });
+  }
+  wireKpiCards();
+  if (document.querySelectorAll('.kpi-html-card[data-wired]').length === 0) {
+    var obs = new MutationObserver(function() { wireKpiCards(); });
+    obs.observe(document.body, { childList: true, subtree: true });
+    setTimeout(function() { obs.disconnect(); }, 8000);
+  }
+})();
+</script>
+""", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
