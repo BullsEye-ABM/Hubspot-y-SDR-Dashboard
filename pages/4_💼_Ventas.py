@@ -529,13 +529,13 @@ with k1:
         _kpi_detail("Todos los negocios activos", df.sort_values("score", ascending=False))
 
 with k2:
-    st.markdown(_kcard("💰","Valor total",f"${total_value:,.0f}","suma de deals",
+    st.markdown(_kcard("💰","Valor total",f"UF {total_value:,.0f}","suma de deals",
         "#0ea5e9","linear-gradient(135deg,#f0f9ff,#e0f2fe)","#7dd3fc"), unsafe_allow_html=True)
     if st.button(" ", key="kbtn2", use_container_width=True):
         _kpi_detail("Negocios por valor", df.sort_values("amount", ascending=False))
 
 with k3:
-    st.markdown(_kcard("⚖️","Valor ponderado",f"${weighted_value:,.0f}","ajustado por probabilidad",
+    st.markdown(_kcard("⚖️","Valor ponderado",f"UF {weighted_value:,.0f}","ajustado por probabilidad",
         "#8b5cf6","linear-gradient(135deg,#faf5ff,#ede9fe)","#c4b5fd"), unsafe_allow_html=True)
     if st.button(" ", key="kbtn3", use_container_width=True):
         _kpi_detail("Negocios por valor ponderado", df.sort_values("weighted", ascending=False))
