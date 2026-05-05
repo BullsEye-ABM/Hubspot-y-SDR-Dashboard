@@ -50,11 +50,6 @@ hr { margin: 1rem 0; }
 .signal-urg { background:rgba(251,191,36,.14); color:#b45309;
               padding:1px 7px; border-radius:8px; font-size:11px; margin:1px; display:inline-block; }
 
-/* ── KPI cards: hide Streamlit buttons (triggered via JS) ───────────────── */
-.element-container:has(.kpi-row-marker) + div[data-testid="stHorizontalBlock"]
-  div[data-testid="stButton"] {
-  display: none !important;
-}
 .kpi-html-card {
   cursor: pointer;
   transition: transform .15s ease, box-shadow .15s ease;
@@ -528,31 +523,36 @@ with k6:
 st.markdown("""
 <script>
 (function() {
-  function wireKpiCards() {
+  function setup() {
     var cards = document.querySelectorAll('.kpi-html-card:not([data-wired])');
-    if (cards.length === 0) return;
-    var marker = document.querySelector('.kpi-row-marker');
-    if (!marker) return;
-    var el = marker.parentElement;
-    while (el && el.getAttribute('data-testid') !== 'stMarkdownContainer') el = el.parentElement;
-    if (!el) el = marker.closest('[class*="element-container"]');
-    var hblock = el ? el.parentElement.nextElementSibling : null;
-    if (!hblock) return;
-    var btns = hblock.querySelectorAll('[data-testid="stButton"] button');
-    cards.forEach(function(card, i) {
-      var btn = btns[i];
-      if (btn) {
-        card.setAttribute('data-wired', '1');
-        card.addEventListener('click', function() { btn.click(); });
-      }
+    if (!cards.length) return 0;
+    var done = 0;
+    cards.forEach(function(card) {
+      var col = card.closest('[data-testid="column"]');
+      if (!col) return;
+      var btn = col.querySelector('[data-testid="stButton"] button');
+      if (!btn) return;
+      // Hide the wrapper two levels up from button (element-container)
+      var wrap = btn.parentElement && btn.parentElement.parentElement;
+      if (wrap) wrap.style.cssText = 'height:0!important;overflow:hidden!important;padding:0!important;margin:0!important;';
+      card.setAttribute('data-wired','1');
+      card.addEventListener('click', (function(b, w) {
+        return function() {
+          if (w) w.style.cssText = '';
+          b.click();
+          if (w) setTimeout(function(){ w.style.cssText='height:0!important;overflow:hidden!important;padding:0!important;margin:0!important;'; }, 80);
+        };
+      })(btn, wrap));
+      done++;
     });
+    return done;
   }
-  wireKpiCards();
-  if (document.querySelectorAll('.kpi-html-card[data-wired]').length === 0) {
-    var obs = new MutationObserver(function() { wireKpiCards(); });
-    obs.observe(document.body, { childList: true, subtree: true });
-    setTimeout(function() { obs.disconnect(); }, 8000);
+  var tries = 0;
+  function attempt() {
+    if (setup() >= 1) return;
+    if (++tries < 40) setTimeout(attempt, 250);
   }
+  attempt();
 })();
 </script>
 """, unsafe_allow_html=True)
