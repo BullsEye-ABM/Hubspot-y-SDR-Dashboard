@@ -379,6 +379,7 @@
             <select name="cliente" id="s-cliente" required>
               <option value="">Selecciona un cliente...</option>
             </select>
+            <input type="hidden" name="id_cliente" id="h-id-cliente" />
             <span class="field-err">Requerido</span>
           </div>
 
@@ -601,6 +602,7 @@ const tomInstances = {};
 // Cache de reuniones pendientes (cargadas al inicio)
 let allMeetings   = [];
 let allPropuestas = [];
+let clientesMap   = {}; // { clienteName: clienteId }
 
 // ── Inicializar al cargar ─────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -669,10 +671,17 @@ async function loadDropdowns() {
       fill("s-industria",      json.data.industrias, true); // true = agregar "Otra" al final
       fill("edit-sdr-select",  json.data.sdrs);
       // Guardar reuniones pendientes para filtrado local (evita roundtrips al servidor)
-      allMeetings   = json.data.meetings   || [];
-      allPropuestas = json.data.propuestas || [];
+      allMeetings   = json.data.meetings    || [];
+      allPropuestas = json.data.propuestas  || [];
+      clientesMap   = json.data.clientesMap || {};
       // Inicializar Tom Select en los searchables DESPUÉS de llenar
       SEARCHABLE_SELECTS.forEach(id => initTomSelect(id));
+      // Al cambiar cliente, actualizar hidden id_cliente
+      if (tomInstances["s-cliente"]) {
+        tomInstances["s-cliente"].on("change", (val) => {
+          document.getElementById("h-id-cliente").value = clientesMap[val] || "";
+        });
+      }
       // Tom Select para el selector de SDR en modo edición
       if (tomInstances["edit-sdr-select"]) {
         tomInstances["edit-sdr-select"].destroy();
@@ -811,6 +820,7 @@ function copySummary() {
 // ── Resetear formulario ───────────────────────────────────────────────────
 function resetForm() {
   document.getElementById("form").reset();
+  document.getElementById("h-id-cliente").value = "";
   // Resetear Tom Select instances
   SEARCHABLE_SELECTS.forEach(id => {
     if (tomInstances[id]) tomInstances[id].setValue("");

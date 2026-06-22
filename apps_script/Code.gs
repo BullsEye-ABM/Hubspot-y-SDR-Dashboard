@@ -21,6 +21,7 @@ const CACHE_TTL          = 300; // 5 minutos
 // Columnas del sheet de salida
 const OUTPUT_HEADERS = [
   "Cliente",
+  "ID Cliente",
   "Origen",
   "Responsable",
   "Empresa",
@@ -83,7 +84,8 @@ function doGet(e) {
 
     // Cachear meta y meetings con chunking para evitar límite 100KB de CacheService
     const metaOnly = { clientes: data.clientes, sdrs: data.sdrs, origenes: data.origenes,
-                       paises: data.paises, industrias: data.industrias, propuestas: data.propuestas };
+                       paises: data.paises, industrias: data.industrias, propuestas: data.propuestas,
+                       clientesMap: data.clientesMap };
     cachePut(cache, CACHE_KEY_META,     JSON.stringify(metaOnly),  CACHE_TTL);
     cachePut(cache, CACHE_KEY_MEETINGS, JSON.stringify(meetings),  CACHE_TTL);
 
@@ -141,7 +143,9 @@ function getMaestraData(ss) {
   const colPais      = headers.findIndex(h => /pa[íi]s/i.test(h));
   const colIndustria = idx("industria");
 
-  const result = { clientes:[], sdrs:[], origenes:[], paises:[], industrias:[], propuestas:[] };
+  const colIdCliente = headers.findIndex(h => h.toLowerCase().includes("id") && h.toLowerCase().includes("cliente"));
+
+  const result = { clientes:[], sdrs:[], origenes:[], paises:[], industrias:[], propuestas:[], clientesMap:{} };
   const seen   = {
     clientes:   new Set(),
     sdrs:       new Set(),
@@ -159,6 +163,8 @@ function getMaestraData(ss) {
     if (cliente && stCliente === "activo" && !seen.clientes.has(cliente)) {
       result.clientes.push(cliente);
       seen.clientes.add(cliente);
+      const idCliente = colIdCliente >= 0 ? val(colIdCliente) : "";
+      if (idCliente) result.clientesMap[cliente] = idCliente;
     }
 
     const sdr   = val(colResponsable);
@@ -308,6 +314,7 @@ function saveReunion(p) {
   function valueForHeader(h) {
     const hl = h.toString().toLowerCase().trim();
     if (hl === "cliente")                                        return p.cliente            || "";
+    if (hl.includes("id") && hl.includes("cliente"))            return p.id_cliente         || "";
     if (hl === "origen")                                         return p.origen             || "";
     if (hl.includes("responsable"))                              return p.responsable        || "";
     // empresa debe ir ANTES de contacto: "Empresa del contacto" contiene "contacto"
