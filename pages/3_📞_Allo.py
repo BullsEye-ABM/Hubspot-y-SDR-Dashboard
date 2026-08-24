@@ -1,8 +1,9 @@
 """
 ALLO · Gestion Telefonica
-Bullseye (SOi Digital) · ALLO API · Cache 15 min
+Bullseye · ALLO API · Cache 15 min
 Actividad de llamadas por SDR y por numero/cliente, tasas de conexion
 (sin voicemail), reuniones agendadas y desglose por etiquetas.
+Diseno: sistema de marca BullsEye (navy #251762 / turquesa #62E0D8).
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from utils.periods import PERIOD_OPTIONS, get_period_dates
 
 
 # ─────────────────────────────────────────
-#  Page config & CSS (mismo sistema de diseno dark que el resto del dashboard)
+#  Page config & CSS (sistema de marca BullsEye)
 # ─────────────────────────────────────────
 st.set_page_config(
     page_title="Bullseye · ALLO",
@@ -36,166 +37,212 @@ require_login()
 
 st.markdown("""
 <style>
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap");
+
 :root {
-  --bg: #0b1020; --card: #161e3d; --border: #243056;
-  --text: #e6eaf2; --text-dim: #93a0c2;
-  --accent: #e63946; --accent-2: #f4a261;
-  --green: #34d399; --amber: #fbbf24; --red: #f87171;
-  --purple: #a78bfa; --pink: #f472b6;
+  --be-navy-900:#150C3A; --be-navy-800:#1C1049; --be-navy-700:#251762;
+  --be-navy-600:#3A2A82; --be-navy-500:#5344A3;
+  --be-teal-100:#EAF9F7; --be-teal-200:#C7EDE9; --be-teal-300:#8FE9E3;
+  --be-teal-400:#62E0D8; --be-teal-600:#1FA39B;
+  --be-white:#FFFFFF; --be-surface:#F6F7FB; --be-surface-alt:#FAFAFD;
+  --be-border-subtle:#EEEFF6; --be-border:#E6E7F1; --be-border-strong:#C9CAD8;
+  --be-grey-500:#9795AD; --be-grey-600:#6E6B8A; --be-grey-700:#54516E; --be-grey-800:#3A3752;
+  --be-positive:#22A06B; --be-warning:#E0A030; --be-negative:#C4404A;
 }
 html, body, [data-testid="stAppViewContainer"] {
-  background: linear-gradient(180deg, #0a0e22 0%, #0b1020 100%);
-  color: var(--text);
+  background: var(--be-surface);
+  color: var(--be-grey-700);
+  font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
 }
 [data-testid="stHeader"] { background: transparent; }
-.block-container { padding-top: 1.5rem; padding-bottom: 4rem; max-width: 1400px; }
+.block-container { padding-top: 1.5rem; padding-bottom: 4rem; max-width: 1360px; }
+p, span, div, label { font-family: 'Montserrat', system-ui, -apple-system, sans-serif; }
+
+/* ── Header ── */
 .brand-header {
   display: flex; align-items: flex-end; justify-content: space-between;
-  border-bottom: 1px solid var(--border); padding-bottom: 18px; margin-bottom: 24px;
+  border-bottom: 1px solid var(--be-border); padding-bottom: 20px; margin-bottom: 28px;
   gap: 20px; flex-wrap: wrap;
 }
 .brand-left { display: flex; align-items: center; gap: 14px; }
 .brand-logo {
-  width: 48px; height: 48px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  width: 44px; height: 44px; border-radius: 12px;
+  background: var(--be-navy-700);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 22px; color: #fff;
+  font-weight: 800; font-size: 15px; color: var(--be-teal-400); letter-spacing: -.02em;
 }
-.brand-title { font-size: 22px; font-weight: 700; margin: 0; color: var(--text); }
-.brand-sub { font-size: 13px; color: var(--text-dim); margin: 2px 0 0; }
-.brand-right { text-align: right; font-size: 13px; color: var(--text-dim); }
-.brand-right strong { color: var(--text); display: block; font-size: 14px; }
+.brand-overline {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .18em;
+  color: var(--be-teal-600); font-weight: 700; margin: 0 0 2px;
+}
+.brand-title { font-size: 22px; font-weight: 800; margin: 0; color: var(--be-navy-800); letter-spacing: -.01em; }
+.brand-sub { font-size: 13px; color: var(--be-grey-600); margin: 3px 0 0; font-weight: 500; }
+.brand-right { text-align: right; font-size: 12.5px; color: var(--be-grey-600); font-weight: 500; }
+.brand-right strong { color: var(--be-navy-800); display: block; font-size: 13.5px; font-weight: 700; }
 .pill {
-  display: inline-block; padding: 4px 10px; border-radius: 999px;
-  background: rgba(230,57,70,.12); color: var(--accent);
-  font-size: 11px; font-weight: 600; margin-top: 6px;
+  display: inline-block; padding: 4px 12px; border-radius: 999px;
+  background: var(--be-teal-100); color: var(--be-teal-600);
+  font-size: 11px; font-weight: 700; margin-top: 8px;
 }
+
+/* ── Section labels ── */
 .section-title {
-  font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px;
-  color: var(--text-dim); font-weight: 600; margin: 32px 0 12px;
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--be-grey-600); font-weight: 700; margin: 36px 0 14px;
+  display: flex; align-items: center; gap: 8px;
 }
-.kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 8px; }
+.section-title::before {
+  content: ""; width: 20px; height: 3px; border-radius: 2px;
+  background: var(--be-teal-400); display: inline-block;
+}
+
+/* ── KPI cards ── */
+.kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 8px; }
 @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 600px)  { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 .kpi {
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 14px; padding: 16px;
+  background: var(--be-white); border: 1px solid var(--be-border);
+  border-radius: 18px; padding: 18px 20px;
+  box-shadow: 0 2px 14px rgba(37,23,98,.05);
 }
-.kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 8px; font-weight: 600; }
-.kpi-value { font-size: 28px; font-weight: 700; letter-spacing: -.5px; line-height: 1.1; }
-.kpi-sub { font-size: 11.5px; color: var(--text-dim); margin-top: 4px; }
-.kpi.accent .kpi-value { color: var(--accent); }
-.kpi.green  .kpi-value { color: var(--green); }
-.kpi.amber  .kpi-value { color: var(--amber); }
-.kpi.red    .kpi-value { color: var(--red); }
-.kpi.purple .kpi-value { color: var(--purple); }
+.kpi-label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--be-grey-500); margin-bottom: 10px; font-weight: 700;
+}
+.kpi-value { font-size: 28px; font-weight: 800; letter-spacing: -.01em; line-height: 1.1; color: var(--be-navy-800); }
+.kpi-sub { font-size: 11.5px; color: var(--be-grey-500); margin-top: 6px; font-weight: 500; }
+.kpi.hero { background: var(--be-navy-700); border-color: var(--be-navy-700); }
+.kpi.hero .kpi-label { color: rgba(255,255,255,.62); }
+.kpi.hero .kpi-value { color: var(--be-white); }
+.kpi.hero .kpi-sub { color: rgba(255,255,255,.62); }
+
+/* ── Generic card ── */
 .card {
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 14px; padding: 18px;
+  background: var(--be-white); border: 1px solid var(--be-border);
+  border-radius: 18px; padding: 20px;
+  box-shadow: 0 2px 14px rgba(37,23,98,.05);
 }
-.tag-pill {
-  display: inline-block; padding: 2px 10px; border-radius: 999px;
-  font-size: 11px; font-weight: 600; margin: 2px;
-}
-[data-testid="stSidebar"] { background: var(--card) !important; border-right: 1px solid var(--border); }
-[data-testid="stSidebar"] * { color: var(--text) !important; }
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] { background: var(--be-white) !important; border-right: 1px solid var(--be-border); }
+[data-testid="stSidebar"] * { color: var(--be-grey-700) !important; font-family: 'Montserrat', sans-serif !important; }
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] small {
-  color: var(--text-dim) !important;
+  color: var(--be-grey-500) !important; font-weight: 600 !important;
 }
-[data-testid="stSidebar"] h3 { color: var(--text) !important; font-size: 14px !important; letter-spacing: 1px; }
+[data-testid="stSidebar"] h3 {
+  color: var(--be-navy-800) !important; font-size: 11px !important;
+  text-transform: uppercase; letter-spacing: .14em; font-weight: 800 !important;
+}
 [data-testid="stSidebar"] [data-baseweb="select"] > div,
 [data-testid="stSidebar"] [data-baseweb="input"] > div {
-  background: rgba(255,255,255,0.03) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
+  background: var(--be-surface) !important;
+  border: 1px solid var(--be-border) !important;
+  color: var(--be-navy-800) !important; border-radius: 8px !important;
 }
-[data-testid="stSidebar"] [data-baseweb="select"] svg { fill: var(--text-dim) !important; }
-[data-testid="stSidebar"] [data-baseweb="popover"] li { color: var(--text) !important; }
-[data-testid="stSidebar"] hr { border-color: var(--border) !important; }
+[data-testid="stSidebar"] [data-baseweb="select"] svg { fill: var(--be-grey-500) !important; }
+[data-testid="stSidebar"] [data-baseweb="tag"] {
+  background: var(--be-navy-700) !important; border-radius: 6px !important;
+}
+[data-testid="stSidebar"] [data-baseweb="tag"] span { color: var(--be-white) !important; }
+[data-testid="stSidebar"] [data-baseweb="popover"] li { color: var(--be-navy-800) !important; }
+[data-testid="stSidebar"] hr { border-color: var(--be-border) !important; }
 [data-testid="stSidebar"] .stButton button {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2)) !important;
-  color: #fff !important;
-  border: none !important;
-  font-weight: 600 !important;
+  background: var(--be-navy-700) !important; color: var(--be-white) !important;
+  border: none !important; font-weight: 700 !important; border-radius: 8px !important;
+  transition: background 160ms ease;
 }
-.stTabs [data-baseweb="tab-list"] { gap: 4px; }
-.stTabs [data-baseweb="tab"] { padding: 8px 16px; }
-hr { margin: 1.2rem 0; border-color: var(--border); }
+[data-testid="stSidebar"] .stButton button:hover { background: var(--be-navy-800) !important; }
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--be-border); }
+.stTabs [data-baseweb="tab"] { padding: 8px 16px; color: var(--be-grey-600); font-weight: 600; }
+.stTabs [aria-selected="true"] { color: var(--be-navy-800) !important; }
+.stTabs [data-baseweb="tab-highlight"] { background-color: var(--be-teal-400) !important; }
+
+hr { margin: 1.2rem 0; border-color: var(--be-border); }
+
+/* ── Tables ── */
 .dt {
   width: 100%; border-collapse: collapse; font-size: 13px;
-  background: var(--card); border-radius: 12px; overflow: hidden;
-  border: 1px solid var(--border); margin-bottom: 8px;
+  background: var(--be-white); border-radius: 14px; overflow: hidden;
+  border: 1px solid var(--be-border); margin-bottom: 8px;
 }
-.dt th, .dt td {
-  padding: 10px 14px; text-align: left;
-  border-bottom: 1px solid var(--border);
-}
+.dt th, .dt td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--be-border-subtle); }
 .dt th {
-  color: var(--text-dim); font-weight: 600; font-size: 11px;
-  text-transform: uppercase; letter-spacing: 1px;
-  background: rgba(255,255,255,.02);
+  color: var(--be-grey-500); font-weight: 700; font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: .08em; background: var(--be-surface-alt);
 }
-.dt td { color: var(--text); }
+.dt td { color: var(--be-grey-700); font-weight: 500; }
 .dt tr:last-child td { border-bottom: none; }
-.dt tr:hover td { background: rgba(255,255,255,.02); }
-.dt-wrap { max-height: 460px; overflow-y: auto; border-radius: 12px; }
+.dt tr:hover td { background: var(--be-surface-alt); }
+.dt-wrap { max-height: 460px; overflow-y: auto; border-radius: 14px; }
+
+/* ── Ranking (avatar + progress bar) ── */
+.rk-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.rk-table td { padding: 12px 10px; border-bottom: 1px solid var(--be-border-subtle); vertical-align: middle; }
+.rk-table tr:last-child td { border-bottom: none; }
+.rk-name { display: flex; align-items: center; gap: 12px; min-width: 200px; }
+.rk-avatar {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  background: var(--be-teal-100); color: var(--be-navy-700);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 12px;
+}
+.rk-name span { font-weight: 700; color: var(--be-navy-800); }
+.rk-bar-wrap { min-width: 140px; }
+.rk-bar { height: 6px; border-radius: 4px; background: var(--be-border-subtle); overflow: hidden; }
+.rk-bar i { display: block; height: 100%; background: var(--be-navy-700); border-radius: 4px; }
+.rk-num { font-weight: 700; color: var(--be-navy-800); text-align: right; }
+.rk-num-sub { font-weight: 500; color: var(--be-grey-500); text-align: right; font-size: 12px; }
+
 [data-testid="stMain"] [data-baseweb="select"] > div,
 section.main [data-baseweb="select"] > div {
-  background: var(--card) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
-  border-radius: 8px !important;
+  background: var(--be-white) !important; border: 1px solid var(--be-border) !important;
+  color: var(--be-navy-800) !important; border-radius: 8px !important;
 }
-[data-testid="stMain"] [data-baseweb="select"] svg,
-section.main [data-baseweb="select"] svg { fill: var(--text-dim) !important; }
 [data-baseweb="popover"], [data-baseweb="popover"] *,
 [data-baseweb="menu"], [data-baseweb="menu"] *,
 [role="listbox"], [role="listbox"] * {
-  background-color: var(--card) !important;
-  color: var(--text) !important;
-  border-color: var(--border) !important;
+  background-color: var(--be-white) !important; color: var(--be-navy-800) !important;
+  border-color: var(--be-border) !important;
 }
 [data-baseweb="popover"] {
-  border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 10px 30px rgba(0,0,0,.5) !important;
+  border: 1px solid var(--be-border) !important; border-radius: 10px !important;
+  box-shadow: 0 10px 30px rgba(37,23,98,.14) !important;
 }
 [data-baseweb="popover"] li:hover, [data-baseweb="menu"] li:hover,
 [role="option"]:hover, [role="option"][aria-selected="true"] {
-  background-color: rgba(230,57,70,.20) !important;
-  color: var(--text) !important;
-}
-[data-testid="stAudio"] audio, audio {
-  width: 100% !important;
-  filter: invert(.88) hue-rotate(180deg) saturate(.7);
-  border-radius: 8px;
+  background-color: var(--be-teal-100) !important; color: var(--be-navy-800) !important;
 }
 [data-testid="stExpander"] {
-  background: var(--card) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 10px !important;
-  margin-bottom: 6px;
+  background: var(--be-white) !important; border: 1px solid var(--be-border) !important;
+  border-radius: 12px !important; margin-bottom: 8px;
+  box-shadow: 0 2px 14px rgba(37,23,98,.05);
 }
-[data-testid="stExpander"] summary,
-[data-testid="stExpander"] [data-testid="stExpanderToggleIcon"] { color: var(--text) !important; }
-[data-testid="stExpander"] [data-testid="stMarkdownContainer"] { color: var(--text-dim); }
+[data-testid="stExpander"] summary { color: var(--be-navy-800) !important; font-weight: 600; }
+[data-testid="stExpander"] [data-testid="stMarkdownContainer"] { color: var(--be-grey-700); }
+[data-testid="stAlert"] { border-radius: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
 
+BRAND_CATEGORICAL = [
+    "#251762", "#1FA39B", "#E0A030", "#5344A3", "#9795AD", "#62E0D8", "#C4404A", "#3A2A82",
+]
+
 PLOT_TEMPLATE = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="#93a0c2", family="Inter, sans-serif"),
+    font=dict(color="#54516E", family="Montserrat, sans-serif"),
     margin=dict(t=50, b=20, l=20, r=20),
 )
 
 
 def _data_table(df: pd.DataFrame, columns: list[str]) -> str:
     if df is None or df.empty:
-        return '<div class="card"><em style="color:var(--text-dim)">Sin datos.</em></div>'
+        return '<div class="card"><em style="color:var(--be-grey-500)">Sin datos.</em></div>'
     headers = "".join(f"<th>{c}</th>" for c in columns)
     rows = []
     for _, row in df.iterrows():
@@ -206,6 +253,49 @@ def _data_table(df: pd.DataFrame, columns: list[str]) -> str:
         f'<thead><tr>{headers}</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody>'
         f'</table></div>'
+    )
+
+
+def _initials(name: str) -> str:
+    parts = [p for p in name.strip().split() if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[1][0]).upper()
+
+
+def _ranking_table(df: pd.DataFrame, name_col: str, name_label: str) -> str:
+    """Ranking con avatar + barra de progreso, ordenado por actividades desc."""
+    if df is None or df.empty:
+        return '<div class="card"><em style="color:var(--be-grey-500)">Sin datos.</em></div>'
+    max_val = df["actividades"].max() or 1
+    rows = []
+    for _, r in df.iterrows():
+        pct = round(r["actividades"] / max_val * 100)
+        rows.append(
+            "<tr>"
+            f'<td><div class="rk-name"><div class="rk-avatar">{_initials(str(r[name_col]))}</div>'
+            f'<span>{r[name_col]}</span></div></td>'
+            f'<td class="rk-bar-wrap"><div class="rk-bar"><i style="width:{pct}%"></i></div></td>'
+            f'<td class="rk-num">{int(r["actividades"])}</td>'
+            f'<td class="rk-num-sub">{int(r["conectadas"])} conect.</td>'
+            f'<td class="rk-num">{r["tasa_conexion"]:.0f}%</td>'
+            f'<td class="rk-num">{int(r["reuniones_agendadas"])}</td>'
+            "</tr>"
+        )
+    return (
+        '<div class="card"><table class="rk-table">'
+        f'<thead><tr><th style="text-align:left;color:var(--be-grey-500);font-size:10.5px;'
+        f'text-transform:uppercase;letter-spacing:.08em">{name_label}</th>'
+        '<th></th><th class="rk-num" style="color:var(--be-grey-500);font-size:10.5px;'
+        'text-transform:uppercase;letter-spacing:.08em">Llamadas</th>'
+        '<th class="rk-num" style="color:var(--be-grey-500);font-size:10.5px"></th>'
+        '<th class="rk-num" style="color:var(--be-grey-500);font-size:10.5px;'
+        'text-transform:uppercase;letter-spacing:.08em">Conexion</th>'
+        '<th class="rk-num" style="color:var(--be-grey-500);font-size:10.5px;'
+        'text-transform:uppercase;letter-spacing:.08em">Reuniones</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div>'
     )
 
 
@@ -232,13 +322,13 @@ user_name_map = {u["id"]: u["name"] for u in users}
 #  Sidebar filters
 # ─────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🎛️ Filtros")
+    st.markdown("### Filtros")
     period = st.selectbox(
         "Periodo", PERIOD_OPTIONS, index=2,
         help="Cambia el rango temporal del informe completo",
     )
     start_date, end_date = get_period_dates(period)
-    st.caption(f"📅 {start_date.strftime('%d %b %Y')} → {end_date.strftime('%d %b %Y')}")
+    st.caption(f"{start_date.strftime('%d %b %Y')} → {end_date.strftime('%d %b %Y')}")
     st.divider()
 
     sdr_options = ["Todos"] + [u["name"] for u in users]
@@ -251,24 +341,24 @@ with st.sidebar:
     number_choice = st.multiselect("Número / Cliente", ["Todos"] + number_labels, default=["Todos"])
 
     st.divider()
-    if st.button("🔄 Forzar actualizacion", use_container_width=True):
+    if st.button("Forzar actualización", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-    st.caption("⏱️ Cache: 15 min · Datos en vivo desde ALLO")
-    st.caption(f"🕐 Ultima carga: {datetime.now().strftime('%H:%M:%S')}")
+    st.caption("Cache: 15 min · Datos en vivo desde ALLO")
+    st.caption(f"Última carga: {datetime.now().strftime('%H:%M:%S')}")
 
 
 # ─────────────────────────────────────────
 #  Header
 # ─────────────────────────────────────────
 st.markdown(
-    f'<div class="brand-header"><div class="brand-left"><div class="brand-logo">📞</div>'
-    f'<div><div class="brand-title">ALLO · Gestion Telefonica</div>'
-    f'<div class="brand-sub">Bullseye (SOi Digital) · Actividad de llamadas por SDR y por cliente</div></div></div>'
-    f'<div class="brand-right"><strong>Reporteria ALLO</strong>'
-    f'<span>Datos al {datetime.now().strftime("%d %b %Y")}</span><br>'
+    f'<div class="brand-header"><div class="brand-left"><div class="brand-logo">BE</div>'
+    f'<div><div class="brand-overline">Reportería ALLO</div>'
+    f'<div class="brand-title">Gestión telefónica</div>'
+    f'<div class="brand-sub">Actividad de llamadas por SDR y por cliente</div></div></div>'
+    f'<div class="brand-right"><strong>Datos al {datetime.now().strftime("%d %b %Y")}</strong>'
     f'<span>Periodo: {start_date.strftime("%d %b %Y")} → {end_date.strftime("%d %b %Y")}</span>'
-    f'<div class="pill">{len(numbers)} numeros · {len(users)} SDRs</div></div></div>',
+    f'<div class="pill">{len(numbers)} números · {len(users)} SDRs</div></div></div>',
     unsafe_allow_html=True,
 )
 
@@ -281,8 +371,8 @@ df_all = items_to_dataframe(raw_items)
 
 if truncated:
     st.warning(
-        f"⚠️ El periodo seleccionado tiene mas actividad de la que se puede cargar de una vez "
-        f"(limite {len(raw_items):,} registros). Los datos mostrados corresponden solo a una parte "
+        f"El periodo seleccionado tiene más actividad de la que se puede cargar de una vez "
+        f"(límite {len(raw_items):,} registros). Los datos mostrados corresponden solo a una parte "
         f"del periodo; reduce el rango de fechas para ver el total exacto."
     )
 
@@ -317,24 +407,24 @@ avg_conn_dur = (
 st.markdown('<div class="section-title">Indicadores clave</div>', unsafe_allow_html=True)
 st.markdown(
     f'<div class="kpi-row">'
-    f'<div class="kpi accent"><div class="kpi-label">Actividades</div><div class="kpi-value">{total_activities}</div>'
+    f'<div class="kpi"><div class="kpi-label">Actividades</div><div class="kpi-value">{total_activities}</div>'
     f'<div class="kpi-sub">Llamadas + SMS en el periodo</div></div>'
     f'<div class="kpi"><div class="kpi-label">Llamadas salientes</div><div class="kpi-value">{len(outbound_calls)}</div>'
     f'<div class="kpi-sub">Dial-outs del equipo</div></div>'
-    f'<div class="kpi green"><div class="kpi-label">Tasa de conexion</div><div class="kpi-value">{conn_rate:.1f}%</div>'
+    f'<div class="kpi hero"><div class="kpi-label">Tasa de conexión</div><div class="kpi-value">{conn_rate:.1f}%</div>'
     f'<div class="kpi-sub">Sin contar voicemail · {connected_n}/{denom}</div></div>'
-    f'<div class="kpi amber"><div class="kpi-label">Voicemail</div><div class="kpi-value">{voicemail_n}</div>'
-    f'<div class="kpi-sub">Excluidos de la tasa de conexion</div></div>'
-    f'<div class="kpi purple"><div class="kpi-label">Reuniones agendadas</div><div class="kpi-value">{meetings_n}</div>'
+    f'<div class="kpi"><div class="kpi-label">Voicemail</div><div class="kpi-value">{voicemail_n}</div>'
+    f'<div class="kpi-sub">Excluidos de la tasa de conexión</div></div>'
+    f'<div class="kpi"><div class="kpi-label">Reuniones agendadas</div><div class="kpi-value">{meetings_n}</div>'
     f'<div class="kpi-sub">Etiqueta "Meeting booked"</div></div>'
-    f'<div class="kpi"><div class="kpi-label">Duracion prom. conectadas</div><div class="kpi-value">{fmt_duration(avg_conn_dur)}</div>'
+    f'<div class="kpi"><div class="kpi-label">Duración prom. conectadas</div><div class="kpi-value">{fmt_duration(avg_conn_dur)}</div>'
     f'<div class="kpi-sub">Llamadas ANSWERED/TRANSFERRED</div></div>'
     f'</div>',
     unsafe_allow_html=True,
 )
 
 if df.empty:
-    st.info("📭 No hay actividad de ALLO en este periodo con los filtros seleccionados.")
+    st.info("No hay actividad de ALLO en este periodo con los filtros seleccionados.")
     st.stop()
 
 
@@ -357,14 +447,14 @@ with col_a:
 
     fig = go.Figure()
     if not daily.empty:
-        fig.add_bar(x=daily["date_day"], y=daily["conectada"], name="Conectadas", marker_color="#34d399")
-        fig.add_bar(x=daily["date_day"], y=daily["voicemail"], name="Voicemail", marker_color="#fbbf24")
-        fig.add_bar(x=daily["date_day"], y=daily["otro"], name="Otros", marker_color="#f87171")
+        fig.add_bar(x=daily["date_day"], y=daily["conectada"], name="Conectadas", marker_color="#22A06B")
+        fig.add_bar(x=daily["date_day"], y=daily["voicemail"], name="Voicemail", marker_color="#E0A030")
+        fig.add_bar(x=daily["date_day"], y=daily["otro"], name="Otros", marker_color="#C9CAD8")
     fig.update_layout(
-        title=dict(text="Llamadas por dia", font=dict(color="#e6eaf2", size=15)),
+        title=dict(text="Llamadas por día", font=dict(color="#1C1049", size=15, family="Montserrat, sans-serif")),
         barmode="stack", height=380,
         legend=dict(orientation="h", y=-0.2),
-        xaxis=dict(showgrid=False), yaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+        xaxis=dict(showgrid=False), yaxis=dict(gridcolor="#EEEFF6"),
         **PLOT_TEMPLATE,
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -388,24 +478,18 @@ with col_b:
             lambda r: (r["connected"] / r["denom"] * 100) if r["denom"] > 0 else 0, axis=1
         )
 
-        def color_for(v):
-            if v >= 40: return "#34d399"
-            if v >= 20: return "#6c8cff"
-            if v >= 10: return "#fbbf24"
-            return "#f87171"
-
         fig2 = go.Figure()
         fig2.add_bar(
             x=daily_rate["date_day"], y=daily_rate["rate"],
-            marker_color=[color_for(v) for v in daily_rate["rate"]],
+            marker_color="#1FA39B",
             text=[f"{v:.0f}%" for v in daily_rate["rate"]], textposition="outside",
-            textfont=dict(color="#e6eaf2"),
+            textfont=dict(color="#54516E"),
         )
         fig2.update_layout(
-            title=dict(text="% Conexion por dia (sin voicemail)", font=dict(color="#e6eaf2", size=15)),
+            title=dict(text="% Conexión por día (sin voicemail)", font=dict(color="#1C1049", size=15, family="Montserrat, sans-serif")),
             height=380,
             xaxis=dict(showgrid=False),
-            yaxis=dict(gridcolor="rgba(255,255,255,0.05)", range=[0, 110], ticksuffix="%"),
+            yaxis=dict(gridcolor="#EEEFF6", range=[0, 110], ticksuffix="%"),
             **PLOT_TEMPLATE,
         )
         st.plotly_chart(fig2, use_container_width=True)
@@ -416,25 +500,28 @@ with col_b:
 # ─────────────────────────────────────────
 #  Tags breakdown
 # ─────────────────────────────────────────
-st.markdown('<div class="section-title">Agrupacion por etiquetas</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Agrupación por etiquetas</div>', unsafe_allow_html=True)
 tags_df = tag_breakdown(calls_df, tags_catalog)
 
 if tags_df.empty:
     st.info("Sin llamadas etiquetadas en este periodo.")
 else:
+    tags_df = tags_df.reset_index(drop=True)
+    tags_df["brand_color"] = [BRAND_CATEGORICAL[i % len(BRAND_CATEGORICAL)] for i in tags_df.index]
+
     col_t1, col_t2 = st.columns([1, 1])
     with col_t1:
         fig3 = px.pie(
             tags_df, names="tag_name", values="count",
             color="tag_name",
-            color_discrete_map=dict(zip(tags_df["tag_name"], tags_df["color"])),
-            hole=0.55,
+            color_discrete_map=dict(zip(tags_df["tag_name"], tags_df["brand_color"])),
+            hole=0.6,
         )
         fig3.update_traces(textinfo="percent+label", textposition="outside",
-                           marker=dict(line=dict(color="#161e3d", width=3)))
+                           marker=dict(line=dict(color="#FFFFFF", width=3)))
         fig3.update_layout(
-            title=dict(text="Distribucion de etiquetas", font=dict(color="#e6eaf2", size=15)),
-            height=380, **PLOT_TEMPLATE,
+            title=dict(text="Distribución de etiquetas", font=dict(color="#1C1049", size=15, family="Montserrat, sans-serif")),
+            height=380, showlegend=False, **PLOT_TEMPLATE,
         )
         st.plotly_chart(fig3, use_container_width=True)
     with col_t2:
@@ -447,27 +534,11 @@ else:
 # ─────────────────────────────────────────
 st.markdown('<div class="section-title">Ranking por SDR</div>', unsafe_allow_html=True)
 sdr_rank = breakdown_by(calls_df, "user_name")
-if sdr_rank.empty:
-    st.info("Sin datos por SDR en este periodo.")
-else:
-    show_sdr = sdr_rank.rename(columns={
-        "user_name": "SDR", "actividades": "Llamadas", "conectadas": "Conectadas",
-        "voicemail": "Voicemail", "tasa_conexion": "Tasa conexion (%)",
-        "reuniones_agendadas": "Reuniones agendadas", "duracion_prom_min": "Dur. prom. (min)",
-    })
-    st.markdown(_data_table(show_sdr, show_sdr.columns.tolist()), unsafe_allow_html=True)
+st.markdown(_ranking_table(sdr_rank, "user_name", "SDR"), unsafe_allow_html=True)
 
-st.markdown('<div class="section-title">Ranking por numero / cliente</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">Ranking por número / cliente</div>', unsafe_allow_html=True)
 client_rank = breakdown_by(calls_df, "client_name")
-if client_rank.empty:
-    st.info("Sin datos por numero en este periodo.")
-else:
-    show_client = client_rank.rename(columns={
-        "client_name": "Cliente / Numero", "actividades": "Llamadas", "conectadas": "Conectadas",
-        "voicemail": "Voicemail", "tasa_conexion": "Tasa conexion (%)",
-        "reuniones_agendadas": "Reuniones agendadas", "duracion_prom_min": "Dur. prom. (min)",
-    })
-    st.markdown(_data_table(show_client, show_client.columns.tolist()), unsafe_allow_html=True)
+st.markdown(_ranking_table(client_rank, "client_name", "Cliente / Número"), unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────
@@ -475,8 +546,8 @@ else:
 # ─────────────────────────────────────────
 st.markdown('<div class="section-title">Detalle</div>', unsafe_allow_html=True)
 tab1, tab2 = st.tabs([
-    f"📋 Actividades ({total_activities})",
-    f"📅 Reuniones agendadas ({meetings_n})",
+    f"Actividades ({total_activities})",
+    f"Reuniones agendadas ({meetings_n})",
 ])
 
 TAG_NAME_MAP = {t["id"]: t["name"] for t in tags_catalog}
@@ -490,8 +561,8 @@ with tab1:
     show["duration_min"] = show["duration_min"].round(1)
     show["tags"] = show["tags"].apply(lambda ts: ", ".join(TAG_NAME_MAP.get(t, t) for t in ts) if ts else "")
     show.columns = [
-        "Fecha/Hora", "SDR", "Cliente/Numero", "Contacto", "Tipo", "Direccion",
-        "Resultado", "Duracion (min)", "Resumen", "Etiquetas",
+        "Fecha/Hora", "SDR", "Cliente/Número", "Contacto", "Tipo", "Dirección",
+        "Resultado", "Duración (min)", "Resumen", "Etiquetas",
     ]
     st.markdown(_data_table(show.head(500), show.columns.tolist()), unsafe_allow_html=True)
     if len(show) > 500:
@@ -504,9 +575,9 @@ with tab2:
     else:
         for _, m in meetings_df.sort_values("date", ascending=False).iterrows():
             date_str = m["date_local"].strftime("%d %b %Y %H:%M")
-            with st.expander(f"📅 {m['user_name']} · {m['client_name']} · {date_str}"):
+            with st.expander(f"{m['user_name']} · {m['client_name']} · {date_str}"):
                 st.markdown(f"**Contacto:** {m['contact_number']}")
-                st.markdown(f"**Duracion:** {fmt_duration(m['duration_min'])}")
+                st.markdown(f"**Duración:** {fmt_duration(m['duration_min'])}")
                 if m.get("summary"):
                     st.markdown("**Resumen**")
                     st.markdown(m["summary"])
@@ -517,7 +588,7 @@ with tab2:
 # Footer
 st.divider()
 st.caption(
-    "🔐 Datos en vivo desde ALLO · Bullseye (SOi Digital) · Cache 15 min · "
-    "Tasa de conexion excluye voicemail del numerador y del denominador · "
-    "Más reportes se iran agregando a esta pagina."
+    "Datos en vivo desde ALLO · Bullseye · Cache 15 min · "
+    "La tasa de conexión excluye voicemail del numerador y del denominador · "
+    "Más reportes se irán agregando a esta página."
 )
