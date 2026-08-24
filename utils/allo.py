@@ -45,7 +45,7 @@ def _get_token() -> str:
 
 def _headers() -> dict:
     return {
-        "Authorization": f"Bearer {_get_token()}",
+        "Authorization": f"Api-Key {_get_token()}",
         "Content-Type": "application/json",
     }
 
