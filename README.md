@@ -1,6 +1,6 @@
 # 🎯 Bullseye Dashboard
 
-Dashboard interno de reportería de SDR que conecta múltiples cuentas HubSpot y Google Sheets en un solo lugar.
+Dashboard interno de reportería de SDR que conecta ALLO (telefonía), HubSpot (pipeline de ventas) y Google Sheets en un solo lugar.
 
 ---
 
@@ -8,11 +8,10 @@ Dashboard interno de reportería de SDR que conecta múltiples cuentas HubSpot y
 
 | Página | Qué muestra |
 |--------|-------------|
-| 🏠 Inicio | KPIs globales, resumen por SDR |
-| 📊 Actividades | Llamadas, reuniones y emails por SDR y tipo |
+| 🏠 Inicio | KPIs globales de reuniones, resumen por SDR |
 | 📅 Reuniones | Reuniones del Google Sheet, heatmap día/hora |
-| 📞 Llamadas | Conectadas, duración, transcripciones, mejores horarios |
-| 👥 Contactos | Contactos y empresas nuevas por SDR y mes |
+| 📞 ALLO | Actividad de llamadas (ALLO): tasa de conexión sin voicemail, reuniones agendadas, etiquetas, ranking por SDR y por número/cliente |
+| 💼 Ventas | Pipeline de negocios y transcripciones DIIO (HubSpot) |
 
 ---
 
@@ -50,23 +49,27 @@ git push -u origin main
 
 ---
 
-### PASO 3 — Obtener los tokens de HubSpot
-
-Para **cada cuenta HubSpot** (la tuya y las de clientes):
+### PASO 3 — Obtener el token de HubSpot (solo para la página Ventas)
 
 1. Entra al portal HubSpot
 2. Ve a **Configuración** → **Integraciones** → **Private Apps**
 3. Clic en **"Create a private app"**
 4. Dale un nombre: `Bullseye Dashboard`
 5. En la pestaña **Scopes**, activa:
-   - `crm.objects.contacts.read`
-   - `crm.objects.companies.read`
-   - `crm.objects.calls.read`
-   - `crm.objects.meetings.read`
-   - `crm.objects.emails.read`
+   - `crm.objects.deals.read`
+   - `crm.schemas.deals.read`
    - `crm.owners.read`
 6. Clic en **"Create app"** → Copia el token (`pat-na1-xxxx`)
-7. Repite para cada cuenta de cliente
+
+---
+
+### PASO 3B — Obtener la API key de ALLO (para la página ALLO)
+
+1. Entra a la plataforma ALLO → **Configuración** → **API / Integraciones**
+2. Genera (o copia) tu API key
+3. Pégala en `secrets.toml` como se indica en el Paso 5 (`[allo]` → `api_key`)
+
+La página ALLO usa esta key para leer llamadas, SMS, usuarios, números y etiquetas del equipo — no requiere scopes adicionales, la API key ya trae los permisos habilitados para tu cuenta.
 
 ---
 
@@ -96,11 +99,11 @@ Para leer el Google Sheet de reuniones:
 
 ### PASO 5 — Configurar los secrets (credenciales secretas)
 
-1. Abre el archivo `bullseye-dashboard/.streamlit/secrets.toml`
-2. Rellena todos los valores con tus tokens y credenciales reales
+1. Copia `bullseye-dashboard/.streamlit/secrets.toml.example` a `bullseye-dashboard/.streamlit/secrets.toml`
+2. Rellena todos los valores con tus tokens y credenciales reales (ALLO, HubSpot, Google)
 3. Para las credenciales de Google, copia los valores del archivo JSON descargado
 
-El archivo ya tiene comentarios explicativos en cada campo.
+El archivo de ejemplo ya tiene comentarios explicativos en cada campo.
 
 ---
 

@@ -1,0 +1,236 @@
+"""
+ALLO API client for the Bullseye dashboard.
+ALLO is the telephony platform used by SDRs (one phone number per client/country,
+each SDR dials from their assigned number so reporting stays unified).
+
+Caches raw fetches 15 minutes via Streamlit's st.cache_data; all filtering by
+SDR, phone number, tag, etc. happens client-side on the cached DataFrame so
+switching a filter doesn't re-hit the API.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Any
+
+import requests
+import streamlit as st
+
+API_BASE = "https://api.withallo.com"
+CACHE_TTL = 900  # 15 minutes
+
+# Safety cap on how many conversation items a single fetch will page through.
+# ~450 calls/month today; this comfortably covers a full year before truncating.
+MAX_ITEMS = 6000
+PAGE_SIZE = 100
+
+# Call results that count as a real human connection (excludes VOICEMAIL).
+CONNECTED_RESULTS = {"ANSWERED", "TRANSFERRED"}
+
+MEETING_TAG = "meeting_booked"
+
+
+def _get_token() -> str:
+    """Read the ALLO API key from Streamlit secrets."""
+    try:
+        return st.secrets["allo"]["api_key"]
+    except (KeyError, FileNotFoundError):
+        st.error(
+            "API key de ALLO no configurada. "
+            "Edita `.streamlit/secrets.toml` con `[allo]` -> `api_key` "
+            "(ver `.streamlit/secrets.toml.example`)."
+        )
+        st.stop()
+
+
+def _headers() -> dict:
+    return {
+        "Authorization": f"Bearer {_get_token()}",
+        "Content-Type": "application/json",
+    }
+
+
+def _get(path: str, params: dict | None = None) -> dict:
+    r = requests.get(f"{API_BASE}{path}", headers=_headers(), params=params, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+def _post(path: str, body: dict) -> dict:
+    r = requests.post(f"{API_BASE}{path}", headers=_headers(), json=body, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+# -----------------------------------------
+#  Reference data (numbers, users, tags)
+# -----------------------------------------
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def list_numbers() -> list[dict[str, Any]]:
+    """Return ALLO phone numbers/lines. Each: {number, name, country, users}."""
+    data = _get("/v2/api/numbers").get("data", [])
+    return [n for n in data if n.get("number")]
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def list_users() -> list[dict[str, Any]]:
+    """Return active team members. Each: {id, name, email, role}."""
+    return _get("/v2/api/users", params={"status": "ACTIVE"}).get("data", [])
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def list_tags() -> list[dict[str, Any]]:
+    """Return configured call/SMS tags. Each: {id, name, color}."""
+    return _get("/v2/api/tags").get("data", [])
+
+
+# -----------------------------------------
+#  Conversation items (calls + SMS)
+# -----------------------------------------
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner="Cargando actividad de ALLO...")
+def fetch_conversation_items(date_from: date, date_to: date, item_type: str = "ALL") -> tuple[list[dict], bool]:
+    """
+    Page through /conversations/items/search for the given date range.
+    Returns (items, truncated) where truncated=True if MAX_ITEMS was hit.
+    No SDR/number/tag filtering here — that happens client-side so switching
+    those filters doesn't trigger a new fetch.
+    """
+    items: list[dict] = []
+    page = 1
+    truncated = False
+
+    while True:
+        body = {
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "type": item_type,
+            "sort": "DATE",
+            "page": page,
+            "size": PAGE_SIZE,
+        }
+        data = _post("/v2/api/conversations/items/search", body)
+        batch = data.get("data", [])
+        items.extend(batch)
+        pagination = data.get("pagination", {})
+        if len(items) >= MAX_ITEMS:
+            truncated = bool(pagination.get("has_more"))
+            break
+        if not pagination.get("has_more"):
+            break
+        page += 1
+
+    return items, truncated
+
+
+def items_to_dataframe(items: list[dict]):
+    """Convert raw ALLO conversation items into a flat pandas DataFrame."""
+    import pandas as pd
+
+    rows = []
+    for it in items:
+        user = it.get("user") or {}
+        rows.append({
+            "id": it.get("id", ""),
+            "type": it.get("type", ""),
+            "direction": it.get("direction", ""),
+            "allo_number": it.get("allo_number", ""),
+            "contact_number": it.get("contact_number", ""),
+            "user_id": user.get("id", ""),
+            "user_name": user.get("name", "Sin asignar"),
+            "date": it.get("date", ""),
+            "duration": it.get("duration", 0) or 0,
+            "result": it.get("result", ""),
+            "recording_url": it.get("recording_url", ""),
+            "summary": it.get("summary", "") or "",
+            "tags": it.get("tags", []) or [],
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce", utc=True)
+    df = df.dropna(subset=["date"])
+    df["duration_min"] = df["duration"] / 60
+    return df
+
+
+# -----------------------------------------
+#  Derived metrics
+# -----------------------------------------
+
+def connection_rate_excl_voicemail(df) -> tuple[float, int, int, int]:
+    """
+    Tasa de conexion sin contar voicemail, sobre llamadas salientes:
+        conectadas (ANSWERED + TRANSFERRED) / (total_outbound - voicemail)
+    Voicemail se excluye del numerador Y del denominador: no cuenta ni como
+    intento ni como conexion.
+    Returns (rate_pct, connected_count, voicemail_count, denominator).
+    """
+    if df.empty:
+        return 0.0, 0, 0, 0
+    calls = df[(df["type"] == "CALL") & (df["direction"] == "OUTBOUND")]
+    if calls.empty:
+        return 0.0, 0, 0, 0
+    voicemail = int((calls["result"] == "VOICEMAIL").sum())
+    connected = int(calls["result"].isin(CONNECTED_RESULTS).sum())
+    denominator = len(calls) - voicemail
+    rate = (connected / denominator * 100) if denominator > 0 else 0.0
+    return rate, connected, voicemail, denominator
+
+
+def meetings_booked_count(df) -> int:
+    """Count of calls tagged as meeting_booked."""
+    if df.empty:
+        return 0
+    return int(df["tags"].apply(lambda t: MEETING_TAG in t).sum())
+
+
+def tag_breakdown(df, tag_catalog: list[dict]):
+    """Return a DataFrame [tag_id, tag_name, color, count] over calls in df."""
+    import pandas as pd
+
+    if df.empty:
+        return pd.DataFrame(columns=["tag_id", "tag_name", "color", "count"])
+    exploded = df.explode("tags").dropna(subset=["tags"])
+    counts = exploded["tags"].value_counts()
+    name_map = {t["id"]: t["name"] for t in tag_catalog}
+    color_map = {t["id"]: t["color"] for t in tag_catalog}
+    out = pd.DataFrame({
+        "tag_id": counts.index,
+        "count": counts.values,
+    })
+    out["tag_name"] = out["tag_id"].map(name_map).fillna(out["tag_id"])
+    out["color"] = out["tag_id"].map(color_map).fillna("#93a0c2")
+    return out.sort_values("count", ascending=False)
+
+
+def breakdown_by(df, group_col: str):
+    """
+    Breakdown by an arbitrary column (e.g. 'user_name' for SDR, or a
+    'client_name' column joined in by the caller for per-number reporting):
+    calls, connected, connection rate (excl. voicemail), meetings booked,
+    avg duration of connected calls.
+    """
+    import pandas as pd
+
+    if df.empty or group_col not in df.columns:
+        return pd.DataFrame()
+
+    rows = []
+    for key, sub in df.groupby(group_col):
+        rate, connected, voicemail, denom = connection_rate_excl_voicemail(sub)
+        connected_calls = sub[sub["result"].isin(CONNECTED_RESULTS)]
+        avg_dur = connected_calls["duration_min"].mean() if not connected_calls.empty else 0
+        rows.append({
+            group_col: key,
+            "actividades": len(sub),
+            "conectadas": connected,
+            "voicemail": voicemail,
+            "tasa_conexion": round(rate, 1),
+            "reuniones_agendadas": meetings_booked_count(sub),
+            "duracion_prom_min": round(avg_dur or 0, 1),
+        })
+    return pd.DataFrame(rows).sort_values("actividades", ascending=False)
