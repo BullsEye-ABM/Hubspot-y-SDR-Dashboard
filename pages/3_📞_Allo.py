@@ -142,18 +142,29 @@ p, span, div, label { font-family: 'Montserrat', system-ui, -apple-system, sans-
   color: var(--be-navy-800) !important; border-radius: 8px !important;
 }
 [data-testid="stSidebar"] [data-baseweb="select"] svg { fill: var(--be-grey-500) !important; }
-[data-testid="stSidebar"] [data-baseweb="tag"] {
-  background: var(--be-navy-700) !important; border-radius: 6px !important;
+[data-testid="stSidebar"] [data-baseweb="tag"],
+[data-testid="stSidebar"] [data-baseweb="tag"] > span,
+[data-testid="stSidebar"] span[data-baseweb="tag"] {
+  background-color: var(--be-navy-700) !important;
+  background: var(--be-navy-700) !important;
+  border-radius: 6px !important;
 }
-[data-testid="stSidebar"] [data-baseweb="tag"] span { color: var(--be-white) !important; }
+[data-testid="stSidebar"] [data-baseweb="tag"] * { color: var(--be-white) !important; fill: var(--be-white) !important; }
 [data-testid="stSidebar"] [data-baseweb="popover"] li { color: var(--be-navy-800) !important; }
 [data-testid="stSidebar"] hr { border-color: var(--be-border) !important; }
 [data-testid="stSidebar"] .stButton button {
-  background: var(--be-navy-700) !important; color: var(--be-white) !important;
-  border: none !important; font-weight: 700 !important; border-radius: 8px !important;
+  background-color: var(--be-navy-700) !important;
+  background: var(--be-navy-700) !important;
+  border: none !important; border-radius: 8px !important;
   transition: background 160ms ease;
 }
-[data-testid="stSidebar"] .stButton button:hover { background: var(--be-navy-800) !important; }
+[data-testid="stSidebar"] .stButton button:hover {
+  background-color: var(--be-navy-800) !important;
+  background: var(--be-navy-800) !important;
+}
+[data-testid="stSidebar"] .stButton button * {
+  color: var(--be-white) !important; font-weight: 700 !important; opacity: 1 !important;
+}
 
 /* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--be-border); }
