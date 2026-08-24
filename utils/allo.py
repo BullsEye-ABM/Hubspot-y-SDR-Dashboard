@@ -158,7 +158,77 @@ def items_to_dataframe(items: list[dict]):
 
 
 # -----------------------------------------
-#  Derived metrics
+#  Official ALLO analytics (source of truth — matches ALLO's own dashboard)
+# -----------------------------------------
+#
+# ALLO's own API rejects combining user_ids + allo_numbers in one call
+# (FILTER_CONFLICT — their own UI has the same "By User / By Phone" mutually
+# exclusive toggle). So these are only usable when at most one of the two
+# dimensions (SDR, numero/cliente) is restricted at a time. When both are
+# restricted simultaneously, the page falls back to the raw item-level
+# helpers above (connection_rate_excl_voicemail / breakdown_by).
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def get_outbound_funnel(
+    date_from: date, date_to: date,
+    user_ids: tuple[str, ...] | None = None,
+    allo_numbers: tuple[str, ...] | None = None,
+    meeting_tag: str = MEETING_TAG,
+) -> dict[str, Any]:
+    """
+    Official outbound funnel from ALLO's own analytics engine — the exact
+    numbers shown in ALLO's dashboard (Outbound > Conversion funnel).
+    Do not pass both user_ids and allo_numbers (ALLO rejects it).
+    """
+    body: dict[str, Any] = {
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "tags": [meeting_tag],
+    }
+    if user_ids:
+        body["user_ids"] = list(user_ids)
+    if allo_numbers:
+        body["allo_numbers"] = list(allo_numbers)
+
+    data = _post("/v2/api/analytics/outbound", body).get("data", {})
+    funnel = data.get("funnel", {})
+    ts = data.get("time_series", {})
+    time_spent = data.get("time_spent", {})
+
+    return {
+        "dials": funnel.get("dials", {}).get("count", {}).get("value", 0),
+        "connected": funnel.get("connected", {}).get("count", {}).get("value", 0),
+        "connected_rate": (funnel.get("connected", {}).get("rate") or 0) * 100,
+        "meetings": funnel.get("conversions", {}).get("count", {}).get("value", 0),
+        "avg_conversation_seconds": time_spent.get("avg_conversation_time_seconds", {}).get("value", 0) or 0,
+        "time_series": {
+            "dials": ts.get("dials", []),
+            "connected": ts.get("connected", []),
+            "connection_rate": ts.get("connection_rate", []),
+        },
+    }
+
+
+def get_outbound_funnel_per_user(date_from: date, date_to: date, user_ids: list[str]) -> list[dict]:
+    """One official funnel call per SDR (cached individually)."""
+    return [
+        {"user_id": uid, **get_outbound_funnel(date_from, date_to, user_ids=(uid,))}
+        for uid in user_ids
+    ]
+
+
+def get_outbound_funnel_per_number(date_from: date, date_to: date, allo_numbers: list[str]) -> list[dict]:
+    """One official funnel call per ALLO number (cached individually)."""
+    return [
+        {"allo_number": num, **get_outbound_funnel(date_from, date_to, allo_numbers=(num,))}
+        for num in allo_numbers
+    ]
+
+
+# -----------------------------------------
+#  Derived metrics (fallback for combined SDR + numero filters, and for
+#  metrics ALLO's analytics API doesn't expose: activities incl. SMS,
+#  voicemail count, tag breakdown, raw detail feed)
 # -----------------------------------------
 
 def connection_rate_excl_voicemail(df) -> tuple[float, int, int, int]:
