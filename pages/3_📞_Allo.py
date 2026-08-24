@@ -19,6 +19,7 @@ from utils.allo import (
     list_numbers, list_users, list_tags, fetch_conversation_items,
     items_to_dataframe, connection_rate_excl_voicemail, meetings_booked_count,
     tag_breakdown, breakdown_by, CONNECTED_RESULTS, MEETING_TAG,
+    get_outbound_funnel, get_outbound_funnel_per_user, get_outbound_funnel_per_number,
 )
 from utils.periods import PERIOD_OPTIONS, get_period_dates
 
@@ -327,6 +328,9 @@ tags_catalog = list_tags()
 
 number_name_map = {n["number"]: n.get("name") or n["number"] for n in numbers}
 user_name_map = {u["id"]: u["name"] for u in users}
+user_id_by_name = {u["name"]: u["id"] for u in users}
+all_user_ids = [u["id"] for u in users]
+all_numbers_list = [n["number"] for n in numbers]
 
 
 # ─────────────────────────────────────────
@@ -357,6 +361,23 @@ with st.sidebar:
         st.rerun()
     st.caption("Cache: 15 min · Datos en vivo desde ALLO")
     st.caption(f"Última carga: {datetime.now().strftime('%H:%M:%S')}")
+
+
+# ─────────────────────────────────────────
+#  Filter state — ALLO's own analytics API rejects combining a SDR filter
+#  with a numero/cliente filter in one call (its own dashboard has the same
+#  "By User / By Phone" mutually exclusive toggle). So official numbers are
+#  used whenever at most one of the two dimensions is narrowed; when both
+#  are narrowed at once, everything falls back to the raw call log.
+# ─────────────────────────────────────────
+sdr_narrowed = bool(sdr_choice) and "Todos" not in sdr_choice
+number_narrowed = bool(number_choice) and "Todos" not in number_choice
+both_narrowed = sdr_narrowed and number_narrowed
+
+selected_user_ids = [user_id_by_name[n] for n in sdr_choice if n in user_id_by_name] if sdr_narrowed else []
+selected_numbers_list = [
+    number_label_to_number[lbl] for lbl in number_choice if lbl in number_label_to_number
+] if number_narrowed else []
 
 
 # ─────────────────────────────────────────
@@ -403,36 +424,64 @@ if not df.empty:
 
 
 # ─────────────────────────────────────────
-#  KPIs
+#  KPIs — sourced from ALLO's own official analytics whenever possible
 # ─────────────────────────────────────────
 total_activities = len(df)
 calls_df = df[df["type"] == "CALL"] if not df.empty else df
 outbound_calls = calls_df[calls_df["direction"] == "OUTBOUND"] if not calls_df.empty else calls_df
-conn_rate, connected_n, voicemail_n, denom = connection_rate_excl_voicemail(df)
-meetings_n = meetings_booked_count(df)
-avg_conn_dur = (
-    outbound_calls.loc[outbound_calls["result"].isin(CONNECTED_RESULTS), "duration_min"].mean()
-    if not outbound_calls.empty else 0
-)
+
+# Voicemail count is informational only (ALLO's funnel API doesn't expose it
+# as a standalone number) — always read from the raw, already-filtered log.
+_, _, voicemail_n, _ = connection_rate_excl_voicemail(df)
+
+official_funnel = None
+if not both_narrowed:
+    official_funnel = get_outbound_funnel(
+        start_date, end_date,
+        user_ids=tuple(selected_user_ids) if selected_user_ids else None,
+        allo_numbers=tuple(selected_numbers_list) if selected_numbers_list else None,
+    )
+    dials_n = official_funnel["dials"]
+    connected_n = official_funnel["connected"]
+    conn_rate = official_funnel["connected_rate"]
+    meetings_n = official_funnel["meetings"]
+    avg_conn_dur = official_funnel["avg_conversation_seconds"] / 60
+else:
+    conn_rate, connected_n, _, denom = connection_rate_excl_voicemail(df)
+    dials_n = denom + voicemail_n
+    meetings_n = meetings_booked_count(df)
+    avg_conn_dur = (
+        outbound_calls.loc[outbound_calls["result"].isin(CONNECTED_RESULTS), "duration_min"].mean()
+        if not outbound_calls.empty else 0
+    )
 
 st.markdown('<div class="section-title">Indicadores clave</div>', unsafe_allow_html=True)
 st.markdown(
     f'<div class="kpi-row">'
     f'<div class="kpi"><div class="kpi-label">Actividades</div><div class="kpi-value">{total_activities}</div>'
     f'<div class="kpi-sub">Llamadas + SMS en el periodo</div></div>'
-    f'<div class="kpi"><div class="kpi-label">Llamadas salientes</div><div class="kpi-value">{len(outbound_calls)}</div>'
+    f'<div class="kpi"><div class="kpi-label">Llamadas salientes</div><div class="kpi-value">{dials_n}</div>'
     f'<div class="kpi-sub">Dial-outs del equipo</div></div>'
     f'<div class="kpi hero"><div class="kpi-label">Tasa de conexión</div><div class="kpi-value">{conn_rate:.1f}%</div>'
-    f'<div class="kpi-sub">Sin contar voicemail · {connected_n}/{denom}</div></div>'
+    f'<div class="kpi-sub">Conectadas: {connected_n}</div></div>'
     f'<div class="kpi"><div class="kpi-label">Voicemail</div><div class="kpi-value">{voicemail_n}</div>'
-    f'<div class="kpi-sub">Excluidos de la tasa de conexión</div></div>'
+    f'<div class="kpi-sub">Informativo, no oficial de ALLO</div></div>'
     f'<div class="kpi"><div class="kpi-label">Reuniones agendadas</div><div class="kpi-value">{meetings_n}</div>'
     f'<div class="kpi-sub">Etiqueta "Meeting booked"</div></div>'
     f'<div class="kpi"><div class="kpi-label">Duración prom. conectadas</div><div class="kpi-value">{fmt_duration(avg_conn_dur)}</div>'
-    f'<div class="kpi-sub">Llamadas ANSWERED/TRANSFERRED</div></div>'
+    f'<div class="kpi-sub">Llamadas conectadas</div></div>'
     f'</div>',
     unsafe_allow_html=True,
 )
+
+if both_narrowed:
+    st.caption(
+        "Estos indicadores se calculan desde el detalle de llamadas: ALLO no permite "
+        "combinar un filtro de SDR con uno de número/cliente en su propia analítica oficial. "
+        "Con un solo filtro a la vez, los indicadores vienen directo de ALLO."
+    )
+else:
+    st.caption("Indicadores calculados por la analítica oficial de ALLO (los mismos números que su propio dashboard).")
 
 if df.empty:
     st.info("No hay actividad de ALLO en este periodo con los filtros seleccionados.")
@@ -445,67 +494,117 @@ if df.empty:
 st.markdown('<div class="section-title">Actividad temporal</div>', unsafe_allow_html=True)
 col_a, col_b = st.columns([2, 1])
 
-with col_a:
-    daily = (
-        calls_df.assign(
-            conectada=lambda x: x["result"].isin(CONNECTED_RESULTS).astype(int),
-            voicemail=lambda x: (x["result"] == "VOICEMAIL").astype(int),
-            otro=lambda x: (~x["result"].isin(CONNECTED_RESULTS) & (x["result"] != "VOICEMAIL")).astype(int),
-        )
-        .groupby("date_day")[["conectada", "voicemail", "otro"]].sum().reset_index()
-        .sort_values("date_day")
-    ) if not calls_df.empty else pd.DataFrame()
-
-    fig = go.Figure()
+if official_funnel is not None:
+    # Official ALLO time series (exact match with their own dashboard).
+    ts = official_funnel["time_series"]
+    daily = pd.DataFrame(ts["dials"]).rename(columns={"value": "dials"}) if ts["dials"] else pd.DataFrame()
     if not daily.empty:
-        fig.add_bar(x=daily["date_day"], y=daily["conectada"], name="Conectadas", marker_color="#22A06B")
-        fig.add_bar(x=daily["date_day"], y=daily["voicemail"], name="Voicemail", marker_color="#E0A030")
-        fig.add_bar(x=daily["date_day"], y=daily["otro"], name="Otros", marker_color="#C9CAD8")
-    fig.update_layout(
-        title=dict(text="Llamadas por día", font=dict(color="#1C1049", size=15, family="Montserrat, sans-serif")),
-        barmode="stack", height=380,
-        legend=dict(orientation="h", y=-0.2),
-        xaxis=dict(showgrid=False), yaxis=dict(gridcolor="#EEEFF6"),
-        **PLOT_TEMPLATE,
-    )
-    st.plotly_chart(fig, use_container_width=True)
+        connected_map = {d["date"]: d["value"] for d in ts["connected"]}
+        rate_map = {d["date"]: d["value"] * 100 for d in ts["connection_rate"]}
+        daily["connected"] = daily["date"].map(connected_map).fillna(0)
+        daily["no_conectadas"] = daily["dials"] - daily["connected"]
+        daily["rate"] = daily["date"].map(rate_map).fillna(0)
+        daily["date"] = pd.to_datetime(daily["date"]).dt.date
+        daily = daily.sort_values("date")
 
-with col_b:
-    daily_rate = (
-        outbound_calls.assign(
-            is_vm=lambda x: (x["result"] == "VOICEMAIL"),
-            is_conn=lambda x: x["result"].isin(CONNECTED_RESULTS),
+    with col_a:
+        fig = go.Figure()
+        if not daily.empty:
+            fig.add_bar(x=daily["date"], y=daily["connected"], name="Conectadas", marker_color="#22A06B")
+            fig.add_bar(x=daily["date"], y=daily["no_conectadas"], name="No conectadas", marker_color="#C9CAD8")
+        fig.update_layout(
+            title=dict(text="Llamadas por día (oficial ALLO)", font=dict(color="#1C1049", size=15, family="Montserrat, sans-serif")),
+            barmode="stack", height=380,
+            legend=dict(orientation="h", y=-0.2),
+            xaxis=dict(showgrid=False), yaxis=dict(gridcolor="#EEEFF6"),
+            **PLOT_TEMPLATE,
         )
-        .groupby("date_day")
-        .apply(lambda g: pd.Series({
-            "denom": (~g["is_vm"]).sum(),
-            "connected": g["is_conn"].sum(),
-        }))
-        .reset_index()
-    ) if not outbound_calls.empty else pd.DataFrame()
+        st.plotly_chart(fig, use_container_width=True)
 
-    if not daily_rate.empty:
-        daily_rate["rate"] = daily_rate.apply(
-            lambda r: (r["connected"] / r["denom"] * 100) if r["denom"] > 0 else 0, axis=1
-        )
-
+    with col_b:
         fig2 = go.Figure()
-        fig2.add_bar(
-            x=daily_rate["date_day"], y=daily_rate["rate"],
-            marker_color="#1FA39B",
-            text=[f"{v:.0f}%" for v in daily_rate["rate"]], textposition="outside",
-            textfont=dict(color="#54516E"),
-        )
+        if not daily.empty:
+            fig2.add_bar(
+                x=daily["date"], y=daily["rate"],
+                marker_color="#1FA39B",
+                text=[f"{v:.0f}%" for v in daily["rate"]], textposition="outside",
+                textfont=dict(color="#54516E"),
+            )
         fig2.update_layout(
-            title=dict(text="% Conexión por día (sin voicemail)", font=dict(color="#1C1049", size=15, family="Montserrat, sans-serif")),
+            title=dict(text="% Conexión por día (oficial ALLO)", font=dict(color="#1C1049", size=15, family="Montserrat, sans-serif")),
             height=380,
             xaxis=dict(showgrid=False),
             yaxis=dict(gridcolor="#EEEFF6", range=[0, 110], ticksuffix="%"),
             **PLOT_TEMPLATE,
         )
         st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.info("Sin llamadas salientes en este periodo.")
+        if daily.empty:
+            st.info("Sin llamadas salientes en este periodo.")
+
+else:
+    # Fallback: both SDR and numero/cliente filters active at once — computed
+    # from the raw call log using the same voicemail-excluding formula.
+    with col_a:
+        daily = (
+            calls_df.assign(
+                conectada=lambda x: x["result"].isin(CONNECTED_RESULTS).astype(int),
+                voicemail=lambda x: (x["result"] == "VOICEMAIL").astype(int),
+                otro=lambda x: (~x["result"].isin(CONNECTED_RESULTS) & (x["result"] != "VOICEMAIL")).astype(int),
+            )
+            .groupby("date_day")[["conectada", "voicemail", "otro"]].sum().reset_index()
+            .sort_values("date_day")
+        ) if not calls_df.empty else pd.DataFrame()
+
+        fig = go.Figure()
+        if not daily.empty:
+            fig.add_bar(x=daily["date_day"], y=daily["conectada"], name="Conectadas", marker_color="#22A06B")
+            fig.add_bar(x=daily["date_day"], y=daily["voicemail"], name="Voicemail", marker_color="#E0A030")
+            fig.add_bar(x=daily["date_day"], y=daily["otro"], name="Otros", marker_color="#C9CAD8")
+        fig.update_layout(
+            title=dict(text="Llamadas por día (detalle)", font=dict(color="#1C1049", size=15, family="Montserrat, sans-serif")),
+            barmode="stack", height=380,
+            legend=dict(orientation="h", y=-0.2),
+            xaxis=dict(showgrid=False), yaxis=dict(gridcolor="#EEEFF6"),
+            **PLOT_TEMPLATE,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col_b:
+        daily_rate = (
+            outbound_calls.assign(
+                is_vm=lambda x: (x["result"] == "VOICEMAIL"),
+                is_conn=lambda x: x["result"].isin(CONNECTED_RESULTS),
+            )
+            .groupby("date_day")
+            .apply(lambda g: pd.Series({
+                "denom": (~g["is_vm"]).sum(),
+                "connected": g["is_conn"].sum(),
+            }))
+            .reset_index()
+        ) if not outbound_calls.empty else pd.DataFrame()
+
+        if not daily_rate.empty:
+            daily_rate["rate"] = daily_rate.apply(
+                lambda r: (r["connected"] / r["denom"] * 100) if r["denom"] > 0 else 0, axis=1
+            )
+
+            fig2 = go.Figure()
+            fig2.add_bar(
+                x=daily_rate["date_day"], y=daily_rate["rate"],
+                marker_color="#1FA39B",
+                text=[f"{v:.0f}%" for v in daily_rate["rate"]], textposition="outside",
+                textfont=dict(color="#54516E"),
+            )
+            fig2.update_layout(
+                title=dict(text="% Conexión por día (sin voicemail, detalle)", font=dict(color="#1C1049", size=15, family="Montserrat, sans-serif")),
+                height=380,
+                xaxis=dict(showgrid=False),
+                yaxis=dict(gridcolor="#EEEFF6", range=[0, 110], ticksuffix="%"),
+                **PLOT_TEMPLATE,
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("Sin llamadas salientes en este periodo.")
 
 
 # ─────────────────────────────────────────
@@ -541,14 +640,42 @@ else:
 
 
 # ─────────────────────────────────────────
-#  Ranking por SDR y por numero/cliente
+#  Ranking por SDR y por numero/cliente — analitica oficial de ALLO cuando
+#  la otra dimension no esta restringida; detalle de llamadas si no.
 # ─────────────────────────────────────────
+def _official_ranking(rows: list[dict], id_col: str, name_col: str, id_to_name: dict) -> pd.DataFrame:
+    if not rows:
+        return pd.DataFrame()
+    out = pd.DataFrame([{
+        name_col: id_to_name.get(r[id_col], r[id_col]),
+        "actividades": r["dials"],
+        "conectadas": r["connected"],
+        "tasa_conexion": round(r["connected_rate"], 1),
+        "reuniones_agendadas": r["meetings"],
+    } for r in rows])
+    return out.sort_values("actividades", ascending=False)
+
+
 st.markdown('<div class="section-title">Ranking por SDR</div>', unsafe_allow_html=True)
-sdr_rank = breakdown_by(calls_df, "user_name")
+if number_narrowed:
+    sdr_rank = breakdown_by(calls_df, "user_name")
+    st.caption("Fuente: detalle de llamadas (ALLO no permite un ranking por SDR combinado con filtro de número).")
+else:
+    sdr_ids = selected_user_ids if sdr_narrowed else all_user_ids
+    sdr_rows = get_outbound_funnel_per_user(start_date, end_date, sdr_ids)
+    sdr_rank = _official_ranking(sdr_rows, "user_id", "user_name", user_name_map)
+    st.caption("Fuente: analítica oficial de ALLO.")
 st.markdown(_ranking_table(sdr_rank, "user_name", "SDR"), unsafe_allow_html=True)
 
 st.markdown('<div class="section-title">Ranking por número / cliente</div>', unsafe_allow_html=True)
-client_rank = breakdown_by(calls_df, "client_name")
+if sdr_narrowed:
+    client_rank = breakdown_by(calls_df, "client_name")
+    st.caption("Fuente: detalle de llamadas (ALLO no permite un ranking por número combinado con filtro de SDR).")
+else:
+    number_ids = selected_numbers_list if number_narrowed else all_numbers_list
+    client_rows = get_outbound_funnel_per_number(start_date, end_date, number_ids)
+    client_rank = _official_ranking(client_rows, "allo_number", "client_name", number_name_map)
+    st.caption("Fuente: analítica oficial de ALLO.")
 st.markdown(_ranking_table(client_rank, "client_name", "Cliente / Número"), unsafe_allow_html=True)
 
 
@@ -600,6 +727,8 @@ with tab2:
 st.divider()
 st.caption(
     "Datos en vivo desde ALLO · Bullseye · Cache 15 min · "
-    "La tasa de conexión excluye voicemail del numerador y del denominador · "
+    "Indicadores, gráficos y rankings usan la analítica oficial de ALLO (misma fuente que su dashboard) "
+    "salvo al combinar filtro de SDR + número a la vez, caso en que ALLO no ofrece un numero oficial "
+    "combinado y se calcula desde el detalle de llamadas · "
     "Más reportes se irán agregando a esta página."
 )
