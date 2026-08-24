@@ -1,6 +1,6 @@
 # 🎯 Bullseye Dashboard
 
-Dashboard interno de reportería de SDR que conecta ALLO (telefonía), HubSpot (pipeline de ventas) y Google Sheets en un solo lugar.
+Dashboard interno de reportería de SDR que conecta ALLO (telefonía) y Google Sheets en un solo lugar.
 
 ---
 
@@ -11,7 +11,6 @@ Dashboard interno de reportería de SDR que conecta ALLO (telefonía), HubSpot (
 | 🏠 Inicio | KPIs globales de reuniones, resumen por SDR |
 | 📅 Reuniones | Reuniones del Google Sheet, heatmap día/hora |
 | 📞 ALLO | Actividad de llamadas (ALLO): tasa de conexión sin voicemail, reuniones agendadas, etiquetas, ranking por SDR y por número/cliente |
-| 💼 Ventas | Pipeline de negocios y transcripciones DIIO (HubSpot) |
 
 ---
 
@@ -49,21 +48,7 @@ git push -u origin main
 
 ---
 
-### PASO 3 — Obtener el token de HubSpot (solo para la página Ventas)
-
-1. Entra al portal HubSpot
-2. Ve a **Configuración** → **Integraciones** → **Private Apps**
-3. Clic en **"Create a private app"**
-4. Dale un nombre: `Bullseye Dashboard`
-5. En la pestaña **Scopes**, activa:
-   - `crm.objects.deals.read`
-   - `crm.schemas.deals.read`
-   - `crm.owners.read`
-6. Clic en **"Create app"** → Copia el token (`pat-na1-xxxx`)
-
----
-
-### PASO 3B — Obtener la API key de ALLO (para la página ALLO)
+### PASO 3 — Obtener la API key de ALLO (para la página ALLO)
 
 1. Entra a la plataforma ALLO → **Configuración** → **API / Integraciones**
 2. Genera (o copia) tu API key
@@ -100,7 +85,7 @@ Para leer el Google Sheet de reuniones:
 ### PASO 5 — Configurar los secrets (credenciales secretas)
 
 1. Copia `bullseye-dashboard/.streamlit/secrets.toml.example` a `bullseye-dashboard/.streamlit/secrets.toml`
-2. Rellena todos los valores con tus tokens y credenciales reales (ALLO, HubSpot, Google)
+2. Rellena todos los valores con tus credenciales reales (ALLO, Google)
 3. Para las credenciales de Google, copia los valores del archivo JSON descargado
 
 El archivo de ejemplo ya tiene comentarios explicativos en cada campo.
@@ -151,6 +136,6 @@ El sheet debe tener estas columnas (los nombres son flexibles, el sistema los de
 ## Soporte
 
 Si algo no funciona, revisa:
-1. Que los tokens de HubSpot tengan los scopes correctos
+1. Que la API key de ALLO esté bien copiada en `secrets.toml`
 2. Que el Google Sheet esté compartido con el email de la cuenta de servicio
 3. Que el `sheet_id` en secrets.toml sea el correcto (está en la URL del sheet)
