@@ -54,7 +54,13 @@ def _raise_with_body(r: "requests.Response") -> None:
     try:
         r.raise_for_status()
     except requests.HTTPError as e:
-        raise requests.HTTPError(f"{e} — response body: {r.text[:800]}", response=r) from e
+        sent_body = r.request.body if r.request is not None else None
+        sent_headers = dict(r.request.headers) if r.request is not None else {}
+        sent_headers.pop("Authorization", None)
+        raise requests.HTTPError(
+            f"{e} — response body: {r.text[:800]} — sent body: {sent_body!r} — sent headers: {sent_headers}",
+            response=r,
+        ) from e
 
 
 def _get(path: str, params: dict | None = None) -> dict:
@@ -188,8 +194,7 @@ def get_outbound_funnel(
     Do not pass both user_ids and allo_numbers (ALLO rejects it).
     """
     body: dict[str, Any] = {
-        "date_from": date_from.isoformat(),
-        "date_to": date_to.isoformat(),
+        "date": {"from": date_from.isoformat(), "to": date_to.isoformat()},
         "tags": [meeting_tag],
     }
     if user_ids:
