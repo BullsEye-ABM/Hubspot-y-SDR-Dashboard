@@ -50,15 +50,22 @@ def _headers() -> dict:
     }
 
 
+def _raise_with_body(r: "requests.Response") -> None:
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        raise requests.HTTPError(f"{e} — response body: {r.text[:800]}", response=r) from e
+
+
 def _get(path: str, params: dict | None = None) -> dict:
     r = requests.get(f"{API_BASE}{path}", headers=_headers(), params=params, timeout=30)
-    r.raise_for_status()
+    _raise_with_body(r)
     return r.json()
 
 
 def _post(path: str, body: dict) -> dict:
     r = requests.post(f"{API_BASE}{path}", headers=_headers(), json=body, timeout=30)
-    r.raise_for_status()
+    _raise_with_body(r)
     return r.json()
 
 
